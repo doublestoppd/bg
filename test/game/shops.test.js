@@ -39,3 +39,16 @@ test('quantity ranges default by rarity unless the entry overrides them', () => 
   assert.deepEqual(quantityRangeFor({ itemId: 'pickled-moonbeam' }), RARITY_QUANTITY_RANGES.rare);
   assert.deepEqual(quantityRangeFor({ itemId: 'pickled-moonbeam', quantity: [7, 9] }), [7, 9]);
 });
+
+test('a restock may draw at most half the pool, so weights always decide', async () => {
+  const { planRestock } = await import('../../src/game/restocking.js');
+  const { lowRandom } = await import('../helpers/fixed-random.js');
+  const grocer = findShop('questionable-grocer');
+  // The catalog rule, checked on every real shop at startup.
+  assert.ok(grocer.restock.listingsMax <= Math.floor(grocer.restockPool.length / 2), 'the grocer draws at most half its pool');
+  // The planner's own guard against a definition that would list the whole pool.
+  const wholePool = { ...grocer, restock: { ...grocer.restock, listingsMin: 1, listingsMax: grocer.restockPool.length } };
+  assert.throws(() => planRestock(wholePool, lowRandom), /whole pool/);
+  const tooMany = { ...grocer, restock: { ...grocer.restock, listingsMin: 4, listingsMax: 8 } };
+  assert.throws(() => planRestock(tooMany, lowRandom), /whole pool/);
+});

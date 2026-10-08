@@ -63,7 +63,7 @@ These are deliberately not one property:
 | Dial | Where it is set | What it controls |
 |---|---|---|
 | **Rarity** | `rarity` on the item | A label players see. Nothing in shops reads it except the default quantity range. |
-| **Restock probability** | `weight` on the pool entry | How likely the item is to be picked for a restock, relative to the rest of that shop's pool. |
+| **Restock probability** | `weight` on the pool entry, together with how many listings a restock draws | How likely the item is to be picked for a restock, relative to the rest of that shop's pool. Fewer listings per restock make low weights rarer; a restock never draws the whole pool. |
 | **Quantity per restock** | `quantity: [low, high]` on the entry, else the rarity default | How many copies a listing starts with. |
 | **Current availability** | `shop_stock.remaining_quantity` | What is on the shelf right now, shared by everyone. |
 | **Overall supply** | `dailySupplyCap` on the entry, and the sum of past listings | How many copies can enter the world per UTC day, and how many have. |

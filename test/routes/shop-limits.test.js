@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestServer } from '../helpers/test-server.js';
-import { lowRandom } from '../helpers/fixed-random.js';
+import { lowRandom, sequenceRandom } from '../helpers/fixed-random.js';
 import { createApp } from '../../src/app.js';
 import { ensureShopStates, restockShop } from '../../src/game/restocking.js';
 import { SHOP_LIMITS } from '../../src/game/shop-limits.js';
@@ -154,8 +154,10 @@ test('rare purchases are logged, essentials are always purchasable, and old log 
   try {
     const userId = await server.registerAndLogIn('wobble');
     await ensureShopStates(server.db);
-    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: lowRandom });
+    // One listing, the roll landing on the moonbeam (cumulative weights: pebble 0-9, moonbeam 10-12, jar 13).
+    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: sequenceRandom([1, 10]) });
     const moonbeam = result.listings.find((l) => l.item_id === 'pickled-moonbeam');
+    assert.ok(moonbeam, 'the restock contains the moonbeam');
     await server.db.query('UPDATE shop_stock SET unit_price = 55 WHERE id = $1', [moonbeam.id]);
     const form = await listingForm(server, moonbeam.id);
     const bought = await server.request('/shops/questionable-grocer/buy', {

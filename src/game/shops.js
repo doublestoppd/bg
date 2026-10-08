@@ -19,7 +19,10 @@ import { findItem, RARITIES } from './items.js';
 //   price            essentials: the fixed price
 //   price: [lo, hi]  pool: each restock draws a price in this range
 //   weight           pool: relative chance of being picked (any positive
-//                    whole number; 10 is twice as likely as 5)
+//                    whole number; 10 is twice as likely as 5). Weights
+//                    only matter when a restock picks far fewer listings
+//                    than the pool holds, so restock.listingsMax may be at
+//                    most half the pool size (see validation below).
 //   quantity: [lo, hi]  pool, optional: copies per restock. Defaults by the
 //                    item's rarity to RARITY_QUANTITY_RANGES below.
 //   maxPerPurchase   most copies in one purchase
@@ -61,11 +64,18 @@ const shops = [
         'No refunds. No questions. No sudden movements.',
       ],
     },
+    // One listing per restock while the pool has only three entries: the
+    // pebble (weight 10 of 14) appears in about 71% of restocks, the
+    // moonbeam (3) in 21%, the jar (1) in 7%. A restock may never draw
+    // more than half the pool (validation enforces it), because once most
+    // of the pool is drawn every time, the weights stop meaning anything
+    // and rare entries show up in every restock. Grow the pool before
+    // raising listingsMax.
     restock: {
       minMinutes: 8,
       maxMinutes: 18,
-      listingsMin: 4,
-      listingsMax: 8,
+      listingsMin: 1,
+      listingsMax: 1,
     },
     essentials: [
       { itemId: 'soggy-biscuit', price: 5, maxPerPurchase: 20 },
@@ -136,6 +146,18 @@ function validateShops(list) {
     }
     if (!isWholeNumber(r.listingsMin, 0) || !isWholeNumber(r.listingsMax, r.listingsMin)) {
       throw new Error(`${where}: restock.listingsMin and listingsMax must be whole numbers with min <= max`);
+    }
+    const poolSize = (shop.restockPool || []).length;
+    if (poolSize > 0 && r.listingsMax < 1) {
+      throw new Error(`${where}: restock.listingsMax must be at least 1 when the pool is not empty`);
+    }
+    // A restock that takes most of the pool makes the weights meaningless:
+    // with three entries and two listings, every restock holds two of the
+    // three and a "rare" entry appears most of the time. So a restock may
+    // draw at most half the pool. Grow the pool before raising listingsMax.
+    const mostAllowed = Math.max(1, Math.floor(poolSize / 2));
+    if (poolSize > 0 && r.listingsMax > mostAllowed) {
+      throw new Error(`${where}: restock.listingsMax (${r.listingsMax}) may be at most half the restock pool (${poolSize} entries, so at most ${mostAllowed}), or rare entries would appear in most restocks`);
     }
 
     const seenItems = new Set();

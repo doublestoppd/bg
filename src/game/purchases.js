@@ -6,7 +6,7 @@ import { grantItem } from './inventory.js';
 import { findItem } from './items.js';
 import { assertEligible } from './eligibility.js';
 import { SHOP_LIMITS } from './shop-limits.js';
-import { withTransaction, PG_DEADLOCK, PG_SERIALIZATION_FAILURE } from '../db/pool.js';
+import { withTransaction, PG_DEADLOCK, PG_SERIALIZATION_FAILURE, PG_UNIQUE_VIOLATION } from '../db/pool.js';
 import { lockUser } from '../db/users.js';
 import { insertPurchase, findPurchaseByKey, sumPurchasedFromListing, countListingPurchasesSince } from '../db/shop-purchases.js';
 import { lockListing, decrementListing } from '../db/shop-stock.js';
@@ -42,7 +42,9 @@ export async function purchaseItem(pool, userId, request) {
     try {
       return await withTransaction(pool, (db) => runPurchase(db, userId, checked));
     } catch (error) {
-      const transient = error.code === PG_DEADLOCK || error.code === PG_SERIALIZATION_FAILURE;
+      // A unique violation on the request id means another copy of this
+      // very request committed first; running again returns its result.
+      const transient = error.code === PG_DEADLOCK || error.code === PG_SERIALIZATION_FAILURE || error.code === PG_UNIQUE_VIOLATION;
       if (!transient || attempt >= DEADLOCK_RETRIES) throw error;
     }
   }
@@ -84,19 +86,24 @@ async function runPurchase(db, userId, { shop, itemId, listingId, quantity, show
     throw new Error(`No user ${userId}`);
   }
 
+  // A repeated request (double click, browser retry, lost response) must
+  // get the first purchase back no matter what has happened to the shelf
+  // since: sold out, replaced by a restock, repriced. So the request id is
+  // checked before the listing is examined at all. The hash is built from
+  // the request alone, so a key reused for a different purchase is caught.
+  const requestHash = hashPurchase({ shopId: shop.id, itemId, listingId, quantity, unitPrice: shownPrice });
+  const previous = await findPurchaseByKey(db, userId, requestId);
+  if (previous) {
+    if (previous.request_hash !== requestHash) {
+      throw new GameRuleError('That purchase form was already used for something else.', 'bad_request');
+    }
+    return describe(previous, shop, { item: findItem(previous.item_id) }, { repeated: true, balance: null });
+  }
+
   // Lock order 2: the listing, if buying limited stock.
   const offer = listingId === null
     ? essentialOffer(shop, itemId, quantity)
     : await listingOffer(db, shop, listingId, quantity, user);
-
-  const requestHash = hashPurchase({ shopId: shop.id, itemId: offer.item.id, listingId, quantity, unitPrice: shownPrice });
-  const previous = await findPurchaseByKey(db, userId, requestId);
-  if (previous) {
-    if (previous.request_hash !== requestHash) {
-      throw new GameRuleError('That purchase form was already used for something else.');
-    }
-    return describe(previous, shop, offer, { repeated: true, balance: null });
-  }
 
   if (offer.unitPrice !== shownPrice) {
     throw new GameRuleError(`The price of ${offer.item.name} has changed since you looked. Please check the new price.`, 'price_changed');

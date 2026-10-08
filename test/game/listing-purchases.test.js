@@ -315,3 +315,92 @@ test('the ledger, purchases and stock agree after a busy restock', async () => {
     assert.ok((await countOwned(db, p.id, 'fizzing-pebble')) <= 3);
   }
 });
+
+// ----- retries of a completed purchase after the shelf has changed -----
+
+test('a retry after the listing sold out returns the original purchase, charging nothing', async () => {
+  const { db, user } = await setup();
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 1, price: 10 });
+  const requestId = newRequestId();
+  const first = await buy(db, user.id, listing, 1, { requestId });
+  assert.equal((await remaining(db, listing)).remaining_quantity, 0);
+  const before = await snapshot(db, user.id, listing);
+
+  const retry = await buy(db, user.id, listing, 1, { requestId });
+  assert.equal(retry.repeated, true);
+  assert.equal(retry.purchaseId, first.purchaseId);
+  assert.equal(retry.item.name, 'Fizzing Pebble');
+  assert.deepEqual(await snapshot(db, user.id, listing), before, 'no second charge, no second item');
+});
+
+test('a retry after a restock replaced the listing returns the original purchase', async () => {
+  const { db, user } = await setup();
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 3, price: 10 });
+  const requestId = newRequestId();
+  const first = await buy(db, user.id, listing, 2, { requestId });
+  await stockOne(db, 'pickled-moonbeam'); // retires the pebble listing
+  assert.equal((await remaining(db, listing)).active, false);
+  const before = await snapshot(db, user.id, listing);
+
+  const retry = await buy(db, user.id, listing, 2, { requestId });
+  assert.equal(retry.repeated, true);
+  assert.equal(retry.purchaseId, first.purchaseId);
+  assert.equal(retry.quantity, 2);
+  assert.deepEqual(await snapshot(db, user.id, listing), before);
+  // A fresh request for the gone listing is still refused as expired.
+  await assert.rejects(buy(db, user.id, listing, 1), /shelves have been restocked/);
+});
+
+test('a retry after a price change returns the original purchase; a changed request is refused', async () => {
+  const { db, user } = await setup();
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 5, price: 10 });
+  const requestId = newRequestId();
+  const first = await buy(db, user.id, listing, 1, { requestId });
+  await db.query('UPDATE shop_stock SET unit_price = 25 WHERE id = $1', [listing.id]);
+  const before = await snapshot(db, user.id, listing);
+
+  // Same form resent: same shown price as the original purchase.
+  const retry = await buy(db, user.id, listing, 1, { requestId, shownPrice: 10 });
+  assert.equal(retry.repeated, true);
+  assert.equal(retry.purchaseId, first.purchaseId);
+  assert.equal(retry.unitPrice, 10, 'the price actually paid, not the new one');
+  assert.deepEqual(await snapshot(db, user.id, listing), before);
+
+  // The same request id with different details is not a retry.
+  await assert.rejects(buy(db, user.id, listing, 1, { requestId, shownPrice: 25 }), /already used for something else/);
+  await assert.rejects(buy(db, user.id, listing, 2, { requestId, shownPrice: 10 }), /already used for something else/);
+  assert.deepEqual(await snapshot(db, user.id, listing), before);
+});
+
+test('concurrent retries of one request for the last copy charge once and grant once', async () => {
+  const { db, user } = await setup();
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 1, price: 10 });
+  const requestId = newRequestId();
+  const other = createPool(config.testDatabaseUrl);
+  try {
+    const attempts = [db, other, db, other, db].map((p) => buy(p, user.id, listing, 1, { requestId }));
+    const results = await Promise.all(attempts);
+    assert.equal(results.filter((r) => !r.repeated).length, 1, 'one real purchase');
+    assert.equal(results.filter((r) => r.repeated).length, 4, 'every other copy of the request was answered with it');
+    assert.ok(results.every((r) => r.purchaseId === results[0].purchaseId));
+    assert.equal(await getBalance(db, user.id), 90, 'charged once');
+    assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 1, 'granted once');
+    assert.equal((await remaining(db, listing)).remaining_quantity, 0);
+    assert.equal((await findPurchasesByUser(db, user.id)).length, 1);
+  } finally {
+    await other.end();
+  }
+});
+
+test('a retry of a completed essentials purchase is also answered with the original', async () => {
+  const { db, user } = await setup();
+  const requestId = newRequestId();
+  const essential = (shownPrice) => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 3, shownPrice, requestId });
+  const first = await essential(5);
+  const retry = await essential(5);
+  assert.equal(retry.repeated, true);
+  assert.equal(retry.purchaseId, first.purchaseId);
+  assert.equal(await getBalance(db, user.id), 85);
+  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 6);
+  await assert.rejects(essential(6), /already used for something else/);
+});

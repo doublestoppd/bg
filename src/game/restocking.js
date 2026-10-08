@@ -102,8 +102,16 @@ export async function restockShopWithDefinition(pool, shop, { force = false, tri
 // how many distinct listings, which pool entries (weighted, no repeats),
 // and each one's quantity and price. Exported so tests can check it with
 // a deterministic `random`.
+//
+// Each listing is drawn in turn with probability proportional to weight
+// among the entries not yet chosen. The weights therefore only decide
+// anything when fewer listings are drawn than the pool holds; the catalog
+// validation in shops.js guarantees that for every real shop.
 export function planRestock(shop, random) {
   const pool = [...shop.restockPool];
+  if (pool.length > 1 && shop.restock.listingsMax >= pool.length) {
+    throw new Error(`Shop "${shop.id}" would list its whole pool: restock.listingsMax must be smaller than the pool`);
+  }
   const wanted = Math.min(random.int(shop.restock.listingsMin, shop.restock.listingsMax), pool.length);
   const chosen = [];
   while (chosen.length < wanted && pool.length > 0) {

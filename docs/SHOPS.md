@@ -36,7 +36,7 @@ A shop is one object in the list in `src/game/shops.js`:
   description: 'Groceries of uncertain provenance ...',
   headerImage: null,                    // '/images/shops/questionable-grocer.png' when you have it
   keeper: { name: 'Mungle', image: null, lines: ['Everything is fresh. Define fresh.'] },
-  restock: { minMinutes: 8, maxMinutes: 18, listingsMin: 4, listingsMax: 8 },
+  restock: { minMinutes: 8, maxMinutes: 18, listingsMin: 1, listingsMax: 1 },
   essentials: [
     { itemId: 'soggy-biscuit', price: 5, maxPerPurchase: 20 },
   ],
@@ -65,7 +65,17 @@ Each restock draws a few entries from this list:
 
 * `weight`: relative chance of being picked. Any positive whole number;
   an entry with weight 10 is twice as likely as one with weight 5. Weights
-  are relative to the other entries in the same pool.
+  are relative to the other entries in the same pool, and they only decide
+  anything when a restock draws fewer listings than the pool holds: the
+  listings are drawn one at a time, each with probability proportional to
+  weight among the entries not yet chosen. So `restock.listingsMax` may be
+  at most half the pool size, and the server refuses to start otherwise:
+  with three entries and two listings, every restock would hold two of the
+  three and a "rare" entry would appear most of the time. The further
+  `listingsMax` is below the pool size, the rarer a low-weight entry is.
+  With the grocer's three entries and one listing per restock, the pebble
+  (weight 10 of 14) appears in about 71% of restocks, the moonbeam (3) in
+  21% and the jar (1) in 7%. Grow the pool before raising `listingsMax`.
 * `price: [low, high]`: each restock draws a price in this range.
 * `quantity: [low, high]` (optional): copies per restock. If absent, the
   item's rarity picks a default from `RARITY_QUANTITY_RANGES`
@@ -94,8 +104,9 @@ probability are always explicit per entry.
    purchase mid-flight on one finishes or fails first) and the old restock
    event is marked superseded.
 5. A new restock event is written. The planner picks how many listings
-   (between `listingsMin` and `listingsMax`), which entries (weighted, no
-   repeats), and each one's quantity and price, using `crypto.randomInt`.
+   (between `listingsMin` and `listingsMax`, at most half the pool),
+   which entries (weighted, no repeats), and each one's quantity and
+   price, using `crypto.randomInt`.
 6. Entries with a daily cap reserve their quantity against
    `daily_item_supply`; if the cap is spent the listing is shrunk or dropped.
 7. The listings are inserted, and `shop_state` gets the new event id, the
@@ -182,12 +193,20 @@ commits first wins.
 ### Repeated submissions
 
 Every buy form carries a fresh random `request_id`. The purchase row
-stores it, with a hash of shop, item, quantity and shown price, under a
-unique constraint per account. A double-click, a browser retry, or a
-resent form therefore returns the first purchase instead of making a
+stores it, with a hash of shop, item or listing, quantity and shown price,
+under a unique constraint per account. A double-click, a browser retry, or
+a resent form therefore returns the first purchase instead of making a
 second; the same id sent with different details is refused. Because the
 record is in the database, this holds across restarts and across server
 processes.
+
+The request id is checked first, before the listing is looked at. That
+matters: a retry of a purchase that completed must be answered with that
+purchase even if the shelf has changed since, because the item sold out,
+a restock replaced the listing, or its price changed. The player is never
+charged again and never granted a second item; concurrent copies of one
+request queue behind the account's row lock and each receives the first
+one's result.
 
 ### Reading a failed purchase
 
@@ -302,9 +321,11 @@ until then.
 * **Change a price**: edit `price` (a number for essentials, a range for
   the pool).
 * **Change restock frequency**: edit `restock.minMinutes` and `maxMinutes`.
-* **Change how often an item appears**: edit its `weight`. To make it
-  appear in every restock, set `listingsMin` to the pool size and give it
-  any weight.
+* **Change how often an item appears**: edit its `weight`, or widen the
+  gap between `listingsMax` and the pool size (fewer listings per restock
+  make low-weight entries rarer). An item cannot be made to appear in
+  every restock through the pool; if it should always be available, make
+  it an essential.
 * **Change quantities**: set `quantity: [low, high]` on the entry, or edit
   `RARITY_QUANTITY_RANGES` to change the defaults for every entry without
   its own range.

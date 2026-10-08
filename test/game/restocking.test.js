@@ -24,12 +24,31 @@ async function freshShop() {
 
 // ----- planning (pure, deterministic) -----
 
-test('a plan has between listingsMin and listingsMax distinct entries, capped by the pool', () => {
+test('a plan has between listingsMin and listingsMax distinct entries, never the whole pool', () => {
   const low = planRestock(grocer, lowRandom);
-  assert.equal(low.length, Math.min(grocer.restock.listingsMin, grocer.restockPool.length));
+  assert.equal(low.length, grocer.restock.listingsMin);
   const high = planRestock(grocer, highRandom);
-  assert.equal(high.length, Math.min(grocer.restock.listingsMax, grocer.restockPool.length));
+  assert.equal(high.length, grocer.restock.listingsMax);
+  assert.ok(high.length <= grocer.restockPool.length / 2, 'most of the pool is always left out, so weights decide');
   assert.equal(new Set(high.map((l) => l.itemId)).size, high.length, 'no item listed twice');
+});
+
+test('over many restocks, rare entries appear far less often than common ones', () => {
+  // Seeded, so this is exact and repeatable rather than statistical.
+  const random = seededRandom(7);
+  const appearances = { 'fizzing-pebble': 0, 'pickled-moonbeam': 0, 'unlabelled-jar': 0 };
+  const RESTOCKS = 2000;
+  for (let i = 0; i < RESTOCKS; i++) {
+    for (const planned of planRestock(grocer, random)) appearances[planned.itemId]++;
+  }
+  const share = (id) => appearances[id] / RESTOCKS;
+  // Weights 10 : 3 : 1 and one listing per restock give about 71% : 21% : 7%.
+  assert.ok(share('fizzing-pebble') > 0.6, `pebble in ${share('fizzing-pebble')} of restocks`);
+  assert.ok(share('pickled-moonbeam') < 0.35, `moonbeam in ${share('pickled-moonbeam')} of restocks`);
+  assert.ok(share('unlabelled-jar') < 0.15, `jar in ${share('unlabelled-jar')} of restocks`);
+  assert.ok(share('unlabelled-jar') > 0.02, 'the jar does still appear');
+  assert.ok(share('fizzing-pebble') > 2 * share('pickled-moonbeam'), 'the rare food is much less common than the treat');
+  assert.ok(share('pickled-moonbeam') > 2 * share('unlabelled-jar'), 'and the curiosity rarer still');
 });
 
 test('weighted selection follows the configured weights', () => {
@@ -64,7 +83,7 @@ test('a due shop is restocked: listings, history and the next time are written',
   const now = new Date('2026-10-08T12:00:00Z');
   const result = await restockShop(db, GROCER, { now, random: highRandom });
   assert.equal(result.restocked, true);
-  assert.equal(result.listings.length, 3, 'the whole pool at listingsMax');
+  assert.equal(result.listings.length, grocer.restock.listingsMax);
 
   const state = await findShopState(db, GROCER);
   assert.equal(state.current_restock_id, result.event.id);
@@ -72,14 +91,14 @@ test('a due shop is restocked: listings, history and the next time are written',
   assert.equal(state.next_restock_at.getTime(), now.getTime() + minutes(grocer.restock.maxMinutes));
 
   const listings = await findActiveListings(db, GROCER);
-  assert.equal(listings.length, 3);
+  assert.equal(listings.length, grocer.restock.listingsMax);
   for (const listing of listings) {
     assert.equal(listing.remaining_quantity, listing.initial_quantity);
     assert.ok(listing.name, 'item definition is attached');
   }
   const events = await findRestockEvents(db, GROCER);
   assert.equal(events.length, 1);
-  assert.equal(events[0].listing_count, 3);
+  assert.equal(events[0].listing_count, grocer.restock.listingsMax);
   assert.equal(events[0].triggered_by, 'scheduler');
   assert.equal(events[0].superseded_at, null);
 });
@@ -90,7 +109,7 @@ test('the next restock time is random within the configured range', async () => 
   const low = await restockShop(db, GROCER, { now, random: lowRandom });
   assert.equal(low.nextRestockAt.getTime(), now.getTime() + minutes(grocer.restock.minMinutes));
   const later = new Date(now.getTime() + minutes(60));
-  const mid = await restockShop(db, GROCER, { now: later, random: sequenceRandom([3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13]) });
+  const mid = await restockShop(db, GROCER, { now: later, random: sequenceRandom([1, 0, 0, 0, 13]) });
   assert.ok(mid.nextRestockAt > later);
   assert.ok(mid.nextRestockAt.getTime() <= later.getTime() + minutes(grocer.restock.maxMinutes));
 });
@@ -137,7 +156,7 @@ test('a new restock replaces the old listings but keeps history and purchase rec
   const active = await findActiveListings(db, GROCER);
   assert.ok(active.every((l) => l.restock_id === second.event.id), 'only the new listings are active');
   const old = await findListingsByRestock(db, first.event.id);
-  assert.equal(old.length, 3, 'old listings are kept');
+  assert.equal(old.length, grocer.restock.listingsMax, 'old listings are kept');
   assert.ok(old.every((l) => l.active === false));
 
   const events = await findRestockEvents(db, GROCER);
@@ -156,7 +175,7 @@ test('concurrent workers restock a due shop exactly once', async () => {
   const results = await Promise.all(Array.from({ length: 5 }, () => restockShop(db, GROCER, { now, random: lowRandom })));
   assert.equal(results.filter((r) => r.restocked).length, 1);
   assert.equal((await findRestockEvents(db, GROCER)).length, 1);
-  assert.equal((await findActiveListings(db, GROCER)).length, Math.min(grocer.restock.listingsMin, grocer.restockPool.length));
+  assert.equal((await findActiveListings(db, GROCER)).length, grocer.restock.listingsMin);
 });
 
 test('workers in different processes (separate pools) also restock once', async () => {
@@ -201,7 +220,7 @@ test('state survives a restart: ensureShopStates never resets an existing schedu
     const state = await findShopState(restarted, GROCER);
     assert.equal(state.current_restock_id, first.event.id);
     assert.equal(state.next_restock_at.toISOString(), '2026-10-08T12:18:00.000Z');
-    assert.equal((await findActiveListings(restarted, GROCER)).length, 3, 'stock is still there');
+    assert.equal((await findActiveListings(restarted, GROCER)).length, grocer.restock.listingsMax, 'stock is still there');
     const notDue = await restockShop(restarted, GROCER, { now: new Date('2026-10-08T12:01:00Z'), random: lowRandom });
     assert.equal(notDue.skipped, 'not due');
   } finally {
@@ -214,6 +233,7 @@ test('daily supply caps limit how many copies restocks create per UTC day', asyn
   // Force the jar (cap 4) into every restock, two copies at a time.
   const jarOnly = {
     ...grocer,
+    restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
     restockPool: grocer.restockPool.filter((e) => e.itemId === 'unlabelled-jar').map((e) => ({ ...e, quantity: [2, 2] })),
   };
   const results = [];
@@ -235,6 +255,7 @@ test('simultaneous restocks cannot exceed a daily supply cap together', async ()
   try {
     const jarOnly = {
       ...grocer,
+      restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
       restockPool: grocer.restockPool.filter((e) => e.itemId === 'unlabelled-jar').map((e) => ({ ...e, quantity: [3, 3] })),
     };
     // Make a second shop share the item so two shops restock at once.

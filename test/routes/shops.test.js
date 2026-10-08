@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { startTestServer } from '../helpers/test-server.js';
 import { getBalance } from '../../src/game/currency.js';
 import { countOwned } from '../../src/game/inventory.js';
-import { ensureShopStates, restockShop } from '../../src/game/restocking.js';
+import { ensureShopStates, restockShop, restockShopWithDefinition } from '../../src/game/restocking.js';
+import { findShop } from '../../src/game/shops.js';
 import { highRandom, lowRandom } from '../helpers/fixed-random.js';
 
 // Fetches the shop page and returns the CSRF token plus the request id and
@@ -138,7 +139,9 @@ test('the shop page shows current listings with remaining stock and sold-out sta
   try {
     await server.registerAndLogIn('wobble');
     await ensureShopStates(server.db);
-    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: highRandom });
+    // Two listings for this page test (the real grocer draws one at a time).
+    const grocer = findShop('questionable-grocer');
+    const result = await restockShopWithDefinition(server.db, { ...grocer, restock: { ...grocer.restock, listingsMin: 2, listingsMax: 2 } }, { force: true, random: highRandom });
     await server.db.query('UPDATE shop_stock SET remaining_quantity = 0 WHERE id = $1', [result.listings[0].id]);
 
     const page = await server.request('/shops/questionable-grocer');
