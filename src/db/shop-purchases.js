@@ -1,12 +1,12 @@
 // All SQL for the shop_purchases table.
 
-const PURCHASE_COLUMNS = 'id, user_id, shop_id, item_id, quantity, unit_price, total_cost, idempotency_key, request_hash, created_at';
+const PURCHASE_COLUMNS = 'id, user_id, shop_id, item_id, quantity, unit_price, total_cost, idempotency_key, request_hash, stock_id, restock_id, created_at';
 
-export async function insertPurchase(db, { userId, shopId, itemId, quantity, unitPrice, totalCost, idempotencyKey, requestHash }) {
+export async function insertPurchase(db, { userId, shopId, itemId, quantity, unitPrice, totalCost, idempotencyKey, requestHash, stockId = null, restockId = null }) {
   const { rows } = await db.query(
-    `INSERT INTO shop_purchases (user_id, shop_id, item_id, quantity, unit_price, total_cost, idempotency_key, request_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${PURCHASE_COLUMNS}`,
-    [userId, shopId, itemId, quantity, unitPrice, totalCost, idempotencyKey, requestHash],
+    `INSERT INTO shop_purchases (user_id, shop_id, item_id, quantity, unit_price, total_cost, idempotency_key, request_hash, stock_id, restock_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ${PURCHASE_COLUMNS}`,
+    [userId, shopId, itemId, quantity, unitPrice, totalCost, idempotencyKey, requestHash, stockId, restockId],
   );
   return rows[0];
 }

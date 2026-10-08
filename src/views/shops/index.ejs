@@ -6,7 +6,7 @@
   <% for (const shop of shops) { %>
   <li class="item-box">
     <a href="/shops/<%= shop.id %>">
-      <%- include('../partials/picture', { src: shop.image, alt: shop.name, cssClass: 'item-icon', width: 100, height: 100 }) %>
+      <%- include('../partials/picture', { src: shop.keeper.image, alt: shop.keeper.name, cssClass: 'item-icon', width: 100, height: 100 }) %>
     </a>
     <div class="item-name"><a href="/shops/<%= shop.id %>"><%= shop.name %></a></div>
     <div class="muted"><%= shop.description %></div>

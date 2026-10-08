@@ -72,6 +72,8 @@ Every setting is read from the environment (see `.env.example`):
 | `SESSION_SECRET`    | a fixed development value        | Signs login cookies. Set it in production. |
 | `NODE_ENV`          | unset                            | Set to `production` to require a real secret and secure cookies |
 | `TRUST_PROXY`       | unset                            | Set to `1` (or another hop count) when a reverse proxy sits in front of the game |
+| `SCHEDULER_ENABLED` | `true`                           | Run restocks and housekeeping in this process. Set `false` on extra web-only processes. |
+| `RESTOCK_CHECK_INTERVAL_MS` | `30000`                  | How often the scheduler checks whether a shop is due a restock |
 
 The server refuses to start without `DATABASE_URL`, and in production it
 refuses the default session secret.
@@ -136,15 +138,12 @@ To stop handing out a limited-time item, set `obtainable: false` on it.
 Players who already own one can still use it. To remove an item from the
 game entirely, delete its entry; owners keep it as a keepsake.
 
-## Adding a shop or changing a price
+## Shops
 
-Shops live in `src/game/shops.js`. Each one lists the items it sells with
-a price per item, so prices belong to the shop, not the item. To change a
-price, edit the number next to the item and restart the server. To add a
-shop, append an object with a new id, a name, a description, a keeper's
-greeting, an image path (or null), and a merchandise list; it appears on
-the Shops page immediately. The server refuses to start if a shop sells an
-item that does not exist or is no longer obtainable.
+Shops live in `src/game/shops.js`: always-available essentials at fixed
+prices, plus a pool of limited merchandise that random restocks draw from.
+`docs/SHOPS.md` explains the configuration, how restocks work, and how to
+add a shop, change a price, or change how often something appears.
 
 ## Adding your own artwork
 

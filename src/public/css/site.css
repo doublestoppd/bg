@@ -236,7 +236,19 @@ a:has(> .picture-placeholder) { text-decoration: none; }
 
 /* ----- Shops ----- */
 
-.shop-keeper { font-style: italic; margin-top: 6px; }
+.section-title {
+  font-size: 14px;
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  padding: 3px 8px;
+  margin: 12px 0 8px;
+}
+.shop-header .shop-banner { display: block; margin: 0 auto 8px; }
+.shop-keeper-row { display: flex; align-items: center; justify-content: center; gap: 10px; text-align: left; }
+.shop-keeper { font-style: italic; }
+.stock-count { font-size: 12px; font-weight: bold; color: #1f6b2a; margin-top: 4px; }
+.sold-out .item-icon { opacity: 0.5; }
+.sold-out-label { color: #a33; }
 .price { font-weight: bold; color: #7a4a00; }
 .buy-form { margin-top: 6px; }
 .buy-form input[type="number"] { width: 52px; padding: 3px; font: inherit; border: 1px solid var(--content-border); }

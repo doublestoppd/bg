@@ -7,7 +7,8 @@ test('migrations create the tables and are not applied twice', async () => {
   const db = await resetDatabase();
   const { rows } = await db.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename");
   assert.deepEqual(rows.map((r) => r.tablename), [
-    'coin_transactions', 'inventory', 'items', 'pets', 'request_counters', 'schema_migrations', 'sessions', 'shop_purchases', 'users',
+    'coin_transactions', 'daily_item_supply', 'inventory', 'items', 'pets', 'request_counters', 'schema_migrations', 'sessions',
+    'shop_purchases', 'shop_restock_events', 'shop_state', 'shop_stock', 'users',
   ]);
 
   const before = (await db.query('SELECT COUNT(*) AS n FROM schema_migrations')).rows[0].n;
@@ -20,8 +21,8 @@ test('migrations create the tables and are not applied twice', async () => {
 test('two processes migrating at once do not both apply the same file', async () => {
   const db = await resetDatabase();
   await db.query("DELETE FROM schema_migrations");
-  await db.query('DROP TABLE coin_transactions, inventory, items, pets, request_counters, sessions, shop_purchases, users CASCADE');
+  await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   const results = await Promise.all([runMigrations(db), runMigrations(db)]);
   const appliedCounts = results.map((applied) => applied.length).sort();
-  assert.deepEqual(appliedCounts, [0, 1], 'exactly one of them applied the migration');
+  assert.deepEqual(appliedCounts, [0, 2], 'exactly one of them applied the migrations');
 });

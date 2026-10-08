@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { GameRuleError } from './errors.js';
-import { findShop, findOffer } from './shops.js';
+import { findShop, findEssential } from './shops.js';
 import { spendCoins } from './currency.js';
 import { grantItem } from './inventory.js';
 import { withTransaction } from '../db/pool.js';
@@ -8,12 +8,13 @@ import { lockUser } from '../db/users.js';
 import { insertPurchase, findPurchaseByKey } from '../db/shop-purchases.js';
 
 // ----- Tunable rules -----
-// The most of one item a single purchase may buy. The 999 stack limit in
-// game/inventory.js still applies on top of this.
+// A hard ceiling on one purchase, above any entry's own maxPerPurchase.
+// The 999 stack limit in game/inventory.js still applies on top of this.
 export const MAX_PURCHASE_QUANTITY = 99;
 
-// Buys `quantity` of an item from a shop. The price comes from the shop
-// catalog, never from the caller. Coins leave, items arrive and the
+// Buys `quantity` of one of a shop's essentials. (Limited listings are
+// bought through the next milestone's function.) The price comes from the
+// shop catalog, never from the caller. Coins leave, items arrive and the
 // purchase and ledger rows are written inside one transaction, so a
 // failure at any step (not enough coins, a full stack) leaves everything
 // as it was.
@@ -26,12 +27,13 @@ export async function purchaseItem(pool, userId, { shopId, itemId, quantity, req
   if (!shop) {
     throw new GameRuleError('There is no such shop.');
   }
-  const offer = findOffer(shopId, itemId);
+  const offer = findEssential(shopId, itemId);
   if (!offer) {
     throw new GameRuleError(`${shop.name} does not sell that.`);
   }
-  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > MAX_PURCHASE_QUANTITY) {
-    throw new GameRuleError(`You can buy between 1 and ${MAX_PURCHASE_QUANTITY} at a time.`);
+  const maxQuantity = Math.min(offer.maxPerPurchase, MAX_PURCHASE_QUANTITY);
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > maxQuantity) {
+    throw new GameRuleError(`You can buy between 1 and ${maxQuantity} ${offer.item.name} at a time.`);
   }
   if (typeof requestId !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(requestId)) {
     throw new GameRuleError('That purchase form was out of date. Please try again.');

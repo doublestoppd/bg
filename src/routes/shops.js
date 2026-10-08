@@ -5,6 +5,7 @@ import { GameRuleError } from '../game/errors.js';
 import { allShops, findShop } from '../game/shops.js';
 import { findItem } from '../game/items.js';
 import { purchaseItem, MAX_PURCHASE_QUANTITY } from '../game/purchases.js';
+import { shopMerchandise } from '../game/restocking.js';
 
 const router = Router();
 
@@ -14,10 +15,10 @@ router.get('/', (req, res) => {
   res.render('shops/index', { title: 'Shops', shops: allShops() });
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res, next) => {
   const shop = findShop(req.params.id);
   if (!shop) return shopNotFound(res);
-  renderShop(req, res, shop, { status: 200, error: null });
+  renderShop(req, res, shop, { status: 200, error: null }).catch(next);
 });
 
 router.post('/:id/buy', async (req, res, next) => {
@@ -40,19 +41,27 @@ router.post('/:id/buy', async (req, res, next) => {
     res.redirect(`/shops/${shop.id}`);
   } catch (error) {
     if (error instanceof GameRuleError) {
-      return renderShop(req, res, shop, { status: 400, error: error.message });
+      return renderShop(req, res, shop, { status: 400, error: error.message }).catch(next);
     }
     next(error);
   }
 });
 
-function renderShop(req, res, shop, { status, error }) {
+async function renderShop(req, res, shop, { status, error }) {
+  const merchandise = await shopMerchandise(req.app.locals.db, shop.id);
   res.status(status).render('shops/show', {
     title: shop.name,
     shop,
+    keeperLine: shop.keeper.lines[Math.floor(Math.random() * shop.keeper.lines.length)],
     // Each buy form gets its own random request id (see purchaseItem).
-    merchandise: shop.merchandise.map((offer) => ({ ...offer, item: findItem(offer.itemId), requestId: crypto.randomUUID() })),
-    maxQuantity: MAX_PURCHASE_QUANTITY,
+    essentials: merchandise.essentials.map((offer) => ({
+      ...offer,
+      item: findItem(offer.itemId),
+      maxQuantity: Math.min(offer.maxPerPurchase, MAX_PURCHASE_QUANTITY),
+      requestId: crypto.randomUUID(),
+    })),
+    listings: merchandise.listings,
+    paused: merchandise.paused,
     error,
   });
 }

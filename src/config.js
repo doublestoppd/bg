@@ -18,6 +18,12 @@ const config = {
   // such as 1, or a name such as 'loopback'. Without it, secure cookies are
   // never sent in production and every visitor shares the proxy's IP.
   trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  // The background scheduler (restocks, housekeeping) runs inside the web
+  // process. Set SCHEDULER_ENABLED=false on extra web-only processes; at
+  // least one process must run it.
+  schedulerEnabled: process.env.SCHEDULER_ENABLED !== 'false',
+  // How often the scheduler checks whether any shop is due a restock.
+  restockCheckIntervalMs: Number(process.env.RESTOCK_CHECK_INTERVAL_MS) || 30 * 1000,
 };
 
 if (isProduction && config.sessionSecret === 'change-me-before-going-live') {

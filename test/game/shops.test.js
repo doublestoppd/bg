@@ -1,28 +1,41 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allShops, findShop, findOffer, MAX_PRICE } from '../../src/game/shops.js';
+import { allShops, findShop, findEssential, findPoolEntry, quantityRangeFor, RARITY_QUANTITY_RANGES, MAX_PRICE } from '../../src/game/shops.js';
 import { findItem } from '../../src/game/items.js';
 
 test('the shop catalog is well formed', () => {
   const ids = allShops().map((shop) => shop.id);
   assert.equal(new Set(ids).size, ids.length);
   for (const shop of allShops()) {
-    assert.ok(shop.merchandise.length > 0, `${shop.id} sells something`);
-    for (const { itemId, price } of shop.merchandise) {
-      const item = findItem(itemId);
-      assert.ok(item, `${shop.id} sells a real item (${itemId})`);
-      assert.ok(item.obtainable, `${itemId} is still obtainable`);
-      assert.ok(Number.isSafeInteger(price) && price >= 1 && price <= MAX_PRICE);
+    assert.ok(shop.essentials.length + shop.restockPool.length > 0, `${shop.id} sells something`);
+    assert.ok(shop.restock.minMinutes <= shop.restock.maxMinutes);
+    for (const entry of [...shop.essentials, ...shop.restockPool]) {
+      const item = findItem(entry.itemId);
+      assert.ok(item, `${shop.id} sells a real item (${entry.itemId})`);
+      assert.ok(item.obtainable, `${entry.itemId} is still obtainable`);
+    }
+    for (const entry of shop.restockPool) {
+      assert.ok(entry.price[0] <= entry.price[1] && entry.price[1] <= MAX_PRICE);
+      const [lo, hi] = quantityRangeFor(entry);
+      assert.ok(lo >= 1 && lo <= hi);
     }
   }
 });
 
-test('offers are looked up per shop', () => {
-  assert.equal(findShop('questionable-grocer').name, 'The Questionable Grocer');
+test('essentials and pool entries are looked up per shop', () => {
+  assert.equal(findShop('questionable-grocer').keeper.name, 'Mungle');
   assert.equal(findShop('nowhere'), null);
-  const offer = findOffer('questionable-grocer', 'soggy-biscuit');
-  assert.equal(offer.price, 5);
-  assert.equal(offer.item.name, 'Soggy Biscuit');
-  assert.equal(findOffer('questionable-grocer', 'unlabelled-jar'), null, 'in the catalog but not on sale here');
-  assert.equal(findOffer('nowhere', 'soggy-biscuit'), null);
+  const biscuit = findEssential('questionable-grocer', 'soggy-biscuit');
+  assert.equal(biscuit.price, 5);
+  assert.equal(biscuit.item.name, 'Soggy Biscuit');
+  assert.equal(findEssential('questionable-grocer', 'fizzing-pebble'), null, 'limited stock is not an essential');
+  assert.equal(findPoolEntry('questionable-grocer', 'fizzing-pebble').weight, 10);
+  assert.equal(findPoolEntry('questionable-grocer', 'soggy-biscuit'), null);
+  assert.equal(findPoolEntry('nowhere', 'fizzing-pebble'), null);
+});
+
+test('quantity ranges default by rarity unless the entry overrides them', () => {
+  assert.deepEqual(quantityRangeFor({ itemId: 'fizzing-pebble' }), RARITY_QUANTITY_RANGES.uncommon);
+  assert.deepEqual(quantityRangeFor({ itemId: 'pickled-moonbeam' }), RARITY_QUANTITY_RANGES.rare);
+  assert.deepEqual(quantityRangeFor({ itemId: 'pickled-moonbeam', quantity: [7, 9] }), [7, 9]);
 });

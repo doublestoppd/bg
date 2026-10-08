@@ -28,7 +28,7 @@ src/
   config.js        settings read from environment variables
   site.js          the game's name and logo
   navigation.js    the main menu entries
-  scheduler.js     background housekeeping (expired sessions, old counters)
+  scheduler.js     background jobs: due restocks, expired sessions, old counters
   db/              everything that talks to PostgreSQL
     pool.js        the connection pool and withTransaction()
     migrate.js     applies numbered .sql files once each
@@ -40,12 +40,17 @@ src/
     inventory.js   SQL for the inventory table
     coin-transactions.js  SQL for the coin ledger
     shop-purchases.js     SQL for purchase records
+    shop-state.js         SQL for shop schedules
+    shop-restock-events.js  SQL for restock history
+    shop-stock.js         SQL for limited listings
+    daily-supply.js       SQL for daily supply caps
     request-counters.js   SQL for rate-limit counters
   game/            gameplay rules; no HTTP, no templates
     accounts.js    registration, login, welcome purse and items
     species.js     adoptable creatures (design content)
     items.js       the item catalog (design content) and its sync
-    shops.js       the shop catalog with per-shop prices (design content)
+    shops.js       the shop catalog: essentials and restock pools (design content)
+    restocking.js  restock scheduling and generation
     inventory.js   granting and taking items
     currency.js    the only place coin balances change; writes the ledger
     purchases.js   buying from a shop
@@ -178,6 +183,16 @@ Every feature follows the same shape. Reading a route tells you which game
 function to open; reading the game function tells you which database
 functions it uses.
 
+## Background jobs
+
+`src/scheduler.js` runs inside the web process (`SCHEDULER_ENABLED=false`
+turns it off for extra web-only processes). Every 30 seconds it asks each
+shop whether a restock is due; every 15 minutes it deletes expired
+sessions and old rate-limit counters. Nothing is coordinated in memory:
+each job takes the locks it needs in PostgreSQL, so running the scheduler
+in several processes is safe and the restock locking is described in
+`docs/SHOPS.md`.
+
 ## Security basics
 
 * Passwords are hashed with scrypt and a random salt, using the asynchronous
@@ -207,14 +222,17 @@ definitions and comments):
 * `inventory`: one row per user per item type with a stack quantity
   (CHECK 1 to 999). An emptied stack is deleted.
 * `shop_purchases`: completed purchases with the request id that made them.
+* `shop_state`, `shop_restock_events`, `shop_stock`, `daily_item_supply`:
+  live shop schedules, restock history, limited listings and daily caps.
+  See `docs/SHOPS.md`.
 * `coin_transactions`: the coin ledger; always sums to the balance.
 * `request_counters`: rate-limit windows.
 * `schema_migrations`: bookkeeping.
 
-Species and shops are not tables. They are JavaScript lists in
-`src/game/species.js` and `src/game/shops.js` because they are hand-edited
-design content and nothing in the database needs to reference them by
-foreign key. (Purchases and the ledger store the shop id as plain text.)
+Species and shop *definitions* are not tables. They are JavaScript lists
+in `src/game/species.js` and `src/game/shops.js` because they are
+hand-edited design content. Live shop state (what is on the shelves right
+now, when the next restock is) is in the database, keyed by the shop's id.
 
 ### The item catalog
 
@@ -274,8 +292,9 @@ Any failure rolls back every step.
   stack size, purchase quantity) are named constants at the top of the
   relevant `src/game` file.
 * Adding a species means adding an object to `species.js`.
-* Adding a shop means adding an object to `src/game/shops.js`; changing a
-  price means editing the number on that shop's merchandise line.
+* Adding a shop or merchandise, or changing prices, weights, quantities
+  and restock timing, means editing `src/game/shops.js`. `docs/SHOPS.md`
+  walks through each.
 * Adding an item means adding an object to `src/game/items.js` and
   restarting the server. The catalog is validated at startup so a typo
   fails immediately rather than when a player uses the item.
