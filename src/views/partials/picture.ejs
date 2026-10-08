@@ -1,0 +1,11 @@
+<%#
+  Renders an illustration, or a labelled placeholder box until artwork exists.
+  Include it with: include('partials/picture', { src, alt, cssClass, width, height })
+  Pass src as null (or leave it out) to get the placeholder. Set width and
+  height to reserve space so the page does not jump when the art arrives.
+%>
+<% if (locals.src) { %>
+<img class="picture <%= locals.cssClass || '' %>" src="<%= src %>" alt="<%= locals.alt || '' %>"<% if (locals.width) { %> width="<%= width %>"<% } %><% if (locals.height) { %> height="<%= height %>"<% } %>>
+<% } else { %>
+<span class="picture picture-placeholder <%= locals.cssClass || '' %>"<% if (locals.width || locals.height) { %> style="<% if (locals.width) { %>width:<%= width %>px;<% } %><% if (locals.height) { %>height:<%= height %>px;<% } %>"<% } %>><%= locals.alt || 'Illustration' %></span>
+<% } %>

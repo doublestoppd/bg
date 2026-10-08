@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> - <%= site.name %></title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<div class="site">
+
+  <header class="site-header">
+    <a href="/" class="site-logo-link">
+      <%- include('picture', { src: site.logoImage, alt: site.name, cssClass: 'site-logo' }) %>
+    </a>
+  </header>
+
+  <%- include('nav') %>
+
+  <main class="site-content">
+    <h1 class="page-title"><%= title %></h1>

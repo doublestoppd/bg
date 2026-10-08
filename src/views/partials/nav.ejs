@@ -1,0 +1,17 @@
+<%# Main menu. Entries come from src/navigation.js. %>
+<nav class="site-nav" aria-label="Main menu">
+  <h2 class="site-nav-heading">Navigation</h2>
+  <ul>
+    <% for (const item of navigation) { %>
+    <li>
+      <a href="<%= item.href %>"<% if (item.image) { %> class="nav-image-link"<% } %>>
+        <% if (item.image) { %>
+        <img src="<%= item.image %>" alt="<%= item.label %>">
+        <% } else { %>
+        <%= item.label %>
+        <% } %>
+      </a>
+    </li>
+    <% } %>
+  </ul>
+</nav>
