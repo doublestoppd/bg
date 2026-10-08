@@ -32,12 +32,12 @@ router.post('/:id/buy', async (req, res, next) => {
     const result = await purchaseItem(req.app.locals.db, req.currentUser.id, {
       shopId: shop.id,
       itemId: req.body.item,
+      listingId: req.body.listing,
       quantity: Number(req.body.quantity),
+      shownPrice: Number(req.body.shown_price),
       requestId: req.body.request_id,
     });
-    req.session.flash = result.repeated
-      ? { type: 'success', text: `That purchase of ${result.quantity} ${result.item.name} had already gone through.` }
-      : { type: 'success', text: `You bought ${result.quantity} ${result.item.name} for ${result.totalCost} coins. You have ${result.balance} coins left.` };
+    req.session.flash = { type: 'success', text: purchaseMessage(result) };
     res.redirect(`/shops/${shop.id}`);
   } catch (error) {
     if (error instanceof GameRuleError) {
@@ -60,10 +60,22 @@ async function renderShop(req, res, shop, { status, error }) {
       maxQuantity: Math.min(offer.maxPerPurchase, MAX_PURCHASE_QUANTITY),
       requestId: crypto.randomUUID(),
     })),
-    listings: merchandise.listings,
+    listings: merchandise.listings.map((listing) => ({
+      ...listing,
+      maxQuantity: Math.min(listing.max_per_purchase, listing.remaining_quantity, MAX_PURCHASE_QUANTITY),
+      requestId: crypto.randomUUID(),
+    })),
     paused: merchandise.paused,
     error,
   });
+}
+
+function purchaseMessage(result) {
+  if (result.repeated) {
+    return `That purchase of ${result.quantity} ${result.item.name} had already gone through.`;
+  }
+  const shelf = result.remaining === null ? '' : result.remaining === 0 ? ' That was the last of them.' : ` ${result.remaining} left on the shelf.`;
+  return `You bought ${result.quantity} ${result.item.name} for ${result.totalCost} coins. You have ${result.balance} coins left.${shelf}`;
 }
 
 function shopNotFound(res) {

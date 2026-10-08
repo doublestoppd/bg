@@ -28,6 +28,7 @@
       <%- include('../partials/csrf') %>
       <input type="hidden" name="request_id" value="<%= offer.requestId %>">
       <input type="hidden" name="item" value="<%= offer.item.id %>">
+      <input type="hidden" name="shown_price" value="<%= offer.price %>">
       <label class="visually-hidden" for="qty-<%= offer.item.id %>">Quantity</label>
       <input type="number" id="qty-<%= offer.item.id %>" name="quantity" value="1" min="1" max="<%= offer.maxQuantity %>" required>
       <button type="submit">Buy</button>
@@ -54,6 +55,15 @@
     <div class="stock-count sold-out-label">Sold out</div>
     <% } else { %>
     <div class="stock-count"><%= listing.remaining_quantity %> left</div>
+    <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
+      <%- include('../partials/csrf') %>
+      <input type="hidden" name="request_id" value="<%= listing.requestId %>">
+      <input type="hidden" name="listing" value="<%= listing.id %>">
+      <input type="hidden" name="shown_price" value="<%= listing.unit_price %>">
+      <label class="visually-hidden" for="qty-listing-<%= listing.id %>">Quantity</label>
+      <input type="number" id="qty-listing-<%= listing.id %>" name="quantity" value="1" min="1" max="<%= listing.maxQuantity %>" required>
+      <button type="submit">Buy</button>
+    </form>
     <% } %>
   </li>
   <% } %>

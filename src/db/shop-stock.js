@@ -39,3 +39,22 @@ export async function findListingsByRestock(db, restockId) {
   );
   return rows;
 }
+
+// Locks one listing for the rest of the transaction and returns it (or
+// null). Purchases of the same listing therefore run one at a time, and a
+// restock that wants to retire the listing waits for them.
+export async function lockListing(db, stockId) {
+  const { rows } = await db.query(`SELECT ${STOCK_COLUMNS} FROM shop_stock WHERE shop_stock.id = $1 FOR UPDATE`, [stockId]);
+  return rows[0] || null;
+}
+
+// Takes copies off the shelf only if the listing is still active and has
+// enough. Returns rows changed (1 or 0), so the caller can tell.
+export async function decrementListing(db, stockId, quantity) {
+  const result = await db.query(
+    `UPDATE shop_stock SET remaining_quantity = remaining_quantity - $2
+     WHERE id = $1 AND active AND remaining_quantity >= $2`,
+    [stockId, quantity],
+  );
+  return result.rowCount;
+}

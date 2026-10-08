@@ -279,12 +279,15 @@ browser refresh never repeats the feed.
 Routes never touch `users.coins`. Future rewards call `awardCoins` with
 their own reason.
 
-`purchaseItem` in `src/game/purchases.js` validates the shop, the offer and
-the quantity, then inside one transaction: locks the player's row, checks
-whether this form's request id was already used (and if so returns that
-purchase instead of making another), inserts the purchase record, spends
-the coins, and grants the items. The price always comes from the catalog.
-Any failure rolls back every step.
+`purchaseItem` in `src/game/purchases.js` buys either an essential (fixed
+catalog price) or a limited listing from the current restock. Inside one
+transaction it locks the player's row, then the listing; checks it is
+live, in stock and within the per-purchase and per-restock limits; replays
+a repeated request id instead of buying twice; refuses if the price the
+player saw differs from the real one; then inserts the purchase, takes the
+stock, spends the coins and grants the item. Every one of those updates
+is conditional in SQL, so stock and coins can never go negative. Any
+failure rolls back every step. `docs/SHOPS.md` has the full walk-through.
 
 ## Changing the game by hand
 

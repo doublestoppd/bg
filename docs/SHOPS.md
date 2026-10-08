@@ -2,8 +2,8 @@
 
 How Blobgarden's NPC shops are defined, stocked, bought from, protected,
 and operated. Written for a JavaScript developer who is not a database
-specialist. (Purchasing of limited stock, anti-abuse rules and the admin
-utility are added in later milestones; this document grows with them.)
+specialist. (Anti-abuse rules and the admin utility are added in later
+milestones; this document grows with them.)
 
 ## The idea
 
@@ -127,6 +127,75 @@ not copies players own. The count lives in `daily_item_supply`, one row per
 item per day, and is updated under a row lock inside the restock
 transaction, so two shops restocking at the same moment cannot both squeeze
 under the cap. The day boundary is midnight UTC.
+
+## Buying
+
+Players click Buy on a shop page and either get the item or a plain
+message saying why not. There is one purchase function for everything,
+`purchaseItem` in `src/game/purchases.js`, used for essentials and for
+limited listings alike.
+
+### What the form sends
+
+* `item` (an essential's id) **or** `listing` (a `shop_stock` id)
+* `quantity`
+* `shown_price`: the unit price printed on the page. It is not trusted as
+  a price; it is compared with the real one, and if they differ the
+  purchase is refused with "the price has changed" so the player can look
+  again. Nobody is ever charged more than they were shown.
+* `request_id`: a random id the page printed into that form. See
+  "Repeated submissions".
+
+The real price comes from the catalog (essentials) or the listing row.
+
+### The transaction, step by step
+
+1. Lock the player's row (`SELECT ... FOR UPDATE`). This account's
+   purchases now run one at a time.
+2. For a listing: lock the listing row. It must belong to this shop, be
+   active (not replaced by a later restock), have enough copies, and the
+   quantity must respect `maxPerPurchase` and, counting what this account
+   already bought from it, `maxPerRestock`.
+3. If this `request_id` was already used by this account, return that
+   purchase (if it was for the same thing) or refuse (if not).
+4. Compare the shown price with the real one.
+5. Insert the purchase record, decrement the listing (the UPDATE itself
+   refuses to go below zero), charge the coins (the UPDATE itself refuses
+   to go below zero), and grant the item (the upsert refuses to pass 999).
+6. Commit. Any failure anywhere rolls back every step.
+
+Locks are always taken in the same order, player then listing, so two
+purchases cannot deadlock each other. A restock that retires listings
+takes the same listing locks, so a purchase in flight finishes first and
+a purchase that arrives during the restock sees the listing as gone.
+Should PostgreSQL ever report a deadlock anyway, the purchase is retried
+up to twice; the request id makes a retry safe.
+
+### Two players, one copy
+
+Both transactions try to lock the listing. The first gets it and buys. The
+second waits, then re-reads the row and finds zero remaining, so it fails
+with "sold out". There is no draw, no reservation, no queue: whoever
+commits first wins.
+
+### Repeated submissions
+
+Every buy form carries a fresh random `request_id`. The purchase row
+stores it, with a hash of shop, item, quantity and shown price, under a
+unique constraint per account. A double-click, a browser retry, or a
+resent form therefore returns the first purchase instead of making a
+second; the same id sent with different details is refused. Because the
+record is in the database, this holds across restarts and across server
+processes.
+
+### Reading a failed purchase
+
+Every refusal is a `GameRuleError` whose message is shown to the player
+and is specific: no such shop, not sold here, listing gone, sold out, only
+N left, at most N at a time, at most N from this restock, price changed,
+not enough coins, cannot carry more than 999, form out of date. A purchase
+that succeeded is in `shop_purchases` with its listing and restock ids, and
+its coin movement is in `coin_transactions` with `purchase_id` set.
 
 ## The tables
 
