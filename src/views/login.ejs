@@ -1,0 +1,22 @@
+<%- include('partials/header') %>
+
+<% if (error) { %>
+<div class="notice notice-error"><p><%= error %></p></div>
+<% } %>
+
+<form method="post" action="/login">
+  <%- include('partials/csrf') %>
+  <div class="form-row">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" value="<%= username %>" maxlength="20" required autocomplete="username">
+  </div>
+  <div class="form-row">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autocomplete="current-password">
+  </div>
+  <button type="submit">Log in</button>
+</form>
+
+<p>New here? <a href="/register">Create an account</a>.</p>
+
+<%- include('partials/footer') %>

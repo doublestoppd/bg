@@ -14,9 +14,10 @@ const forGuests = [
   { label: 'Register', href: '/register' },
 ];
 
+// An entry with method: 'post' is rendered as a small form instead of a
+// link, because actions that change state must not be plain GET links.
 const forPlayers = [
-  { label: 'My Pets', href: '/pets' },
-  { label: 'Adopt a Pet', href: '/pets/adopt' },
+  { label: 'Log Out', href: '/logout', method: 'post' },
 ];
 
 // Returns the menu entries a visitor should see. Logged-in players get the

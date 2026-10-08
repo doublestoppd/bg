@@ -4,10 +4,11 @@ import express from 'express';
 import session from 'express-session';
 import config from './config.js';
 import site from './site.js';
-import { navigationFor } from './navigation.js';
 import { SqliteSessionStore } from './db/sessions.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { loadCurrentUser } from './middleware/current-user.js';
 import homeRoutes from './routes/home.js';
+import authRoutes from './routes/auth.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,19 +40,20 @@ export function createApp({ db }) {
     },
   }));
 
-  app.use(csrfProtection);
-
-  // Values every template can use.
   app.use((req, res, next) => {
     res.locals.site = site;
-    res.locals.currentUser = null;
-    res.locals.navigation = navigationFor(null);
     next();
   });
+  app.use(loadCurrentUser);
+
+  // Must come after loadCurrentUser so that a rejected form can still
+  // render the page frame with the right menu.
+  app.use(csrfProtection);
 
   // --- Routes ---
 
   app.use('/', homeRoutes);
+  app.use('/', authRoutes);
 
   // --- Error pages ---
 

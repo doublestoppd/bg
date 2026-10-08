@@ -4,13 +4,16 @@
   <ul>
     <% for (const item of navigation) { %>
     <li>
-      <a href="<%= item.href %>"<% if (item.image) { %> class="nav-image-link"<% } %>>
-        <% if (item.image) { %>
-        <img src="<%= item.image %>" alt="<%= item.label %>">
-        <% } else { %>
-        <%= item.label %>
-        <% } %>
-      </a>
+      <% if (item.method === 'post') { %>
+      <form method="post" action="<%= item.href %>">
+        <%- include('csrf') %>
+        <button type="submit"><%= item.label %></button>
+      </form>
+      <% } else if (item.image) { %>
+      <a href="<%= item.href %>" class="nav-image-link"><img src="<%= item.image %>" alt="<%= item.label %>"></a>
+      <% } else { %>
+      <a href="<%= item.href %>"><%= item.label %></a>
+      <% } %>
     </li>
     <% } %>
   </ul>

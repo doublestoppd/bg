@@ -4,7 +4,13 @@
   <%- include('partials/picture', { src: null, alt: 'Welcome illustration', cssClass: 'hero' }) %>
 </div>
 
+<% if (currentUser) { %>
+<p>Hello, <strong><%= currentUser.username %></strong>. You have
+<strong><%= currentUser.coins %></strong> coins.</p>
+<% } else { %>
 <p>Welcome to <strong><%= site.name %></strong>, a small and slightly strange
 world where odd creatures are looking for someone to look after them.</p>
+<p><a href="/register">Create an account</a> or <a href="/login">log in</a> to begin.</p>
+<% } %>
 
 <%- include('partials/footer') %>
