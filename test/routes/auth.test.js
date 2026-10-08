@@ -2,6 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestServer } from '../helpers/test-server.js';
 import { createApp } from '../../src/app.js';
+import { waitForFreshWindow } from '../helpers/rate-limit-window.js';
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
 test('a visitor can register, is logged in, and can log out', async () => {
   const server = await startTestServer();
@@ -87,6 +90,7 @@ test('a form without a CSRF token is refused', async () => {
 test('repeated failed logins from one address are rate limited', async () => {
   const server = await startTestServer();
   try {
+    await waitForFreshWindow(LOGIN_WINDOW_MS);
     const token = await server.csrfTokenFrom('/login');
     let last;
     for (let attempt = 1; attempt <= 11; attempt++) {
@@ -108,6 +112,7 @@ test('repeated failed logins from one address are rate limited', async () => {
 test('rate limits persist across an application restart', async () => {
   const server = await startTestServer();
   try {
+    await waitForFreshWindow(LOGIN_WINDOW_MS);
     const token = await server.csrfTokenFrom('/login');
     const attempt = () => server.request('/login', { method: 'POST', form: { _csrf: token, username: 'nobody', password: 'guess guess guess' } });
     for (let i = 0; i < 10; i++) await attempt();
@@ -135,6 +140,7 @@ test('rate limits persist across an application restart', async () => {
 test('behind a trusted proxy, rate limiting uses the forwarded client address', async () => {
   const server = await startTestServer({ trustProxy: 1 });
   try {
+    await waitForFreshWindow(LOGIN_WINDOW_MS);
     const token = await server.csrfTokenFrom('/login');
     const attempt = (ip) => server.request('/login', {
       method: 'POST',

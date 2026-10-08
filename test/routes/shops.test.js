@@ -144,7 +144,7 @@ test('the shop page shows current listings with remaining stock and sold-out sta
     const page = await server.request('/shops/questionable-grocer');
     assert.match(page.text, /On the shelves today/);
     assert.match(page.text, /Sold out/);
-    assert.match(page.text, new RegExp(`${result.listings[1].remaining_quantity} left`));
+    assert.match(page.text, new RegExp(`<span class="remaining">${result.listings[1].remaining_quantity}</span> left`));
     assert.match(page.text, new RegExp(`${result.listings[1].unit_price} coins each`));
     assert.doesNotMatch(page.text, /next_restock|restock_at/, 'no schedule leaks to the page');
   } finally {
@@ -193,6 +193,31 @@ test('a tampered shown price is refused with a clear message', async () => {
     assert.equal(submit.status, 400);
     assert.match(submit.text, /price of Fizzing Pebble has changed/);
     assert.equal(await getBalance(server.db, userId), 100);
+  } finally {
+    await server.close();
+  }
+});
+
+test('the stock feed reports remaining quantities and the restock id, never the schedule', async () => {
+  const server = await startTestServer();
+  try {
+    await server.registerAndLogIn('wobble');
+    await ensureShopStates(server.db);
+    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: lowRandom });
+    const feed = await server.request('/shops/questionable-grocer/stock.json');
+    assert.equal(feed.status, 200);
+    const stock = JSON.parse(feed.text);
+    assert.equal(stock.restockId, result.event.id);
+    assert.equal(stock.paused, false);
+    assert.deepEqual(stock.listings.map((l) => l.id).sort(), result.listings.map((l) => l.id).sort());
+    assert.ok(stock.listings.every((l) => Object.keys(l).join() === 'id,remaining'));
+    assert.doesNotMatch(feed.text, /next|restock_at/);
+    assert.equal((await server.request('/shops/nowhere/stock.json')).status, 404);
+
+    const page = await server.request('/shops/questionable-grocer');
+    assert.match(page.text, /Mungle last restocked the shelves moments ago/);
+    assert.match(page.text, /data-restock="\d+"/);
+    assert.match(page.text, /src="\/js\/shop\.js"/);
   } finally {
     await server.close();
   }

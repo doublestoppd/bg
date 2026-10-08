@@ -142,8 +142,14 @@ game entirely, delete its entry; owners keep it as a keepsake.
 
 Shops live in `src/game/shops.js`: always-available essentials at fixed
 prices, plus a pool of limited merchandise that random restocks draw from.
-`docs/SHOPS.md` explains the configuration, how restocks work, and how to
-add a shop, change a price, or change how often something appears.
+`docs/SHOPS.md` explains the configuration, how restocks and purchases
+work, the anti-abuse protections, and how to add a shop, change a price,
+or change how often something appears.
+
+Administrators use `npm run shop-admin -- <command>` on the server to
+inspect stock and history, pause or restock a shop, and restrict accounts.
+Run it without a command to see the list. `docs/SHOPS.md` ("Operations")
+has the details.
 
 ## Adding your own artwork
 

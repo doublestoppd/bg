@@ -44,6 +44,24 @@ router.get('/:id', viewLimits, async (req, res, next) => {
   renderShop(req, res, shop, { status: 200, error: null }).catch(next);
 });
 
+// Current remaining quantities, for the optional refresh script in
+// public/js/shop.js. Same view limits as the page. Deliberately says
+// nothing about when the next restock is.
+router.get('/:id/stock.json', viewLimits, async (req, res, next) => {
+  const shop = findShop(req.params.id);
+  if (!shop) return res.status(404).json({ error: 'no such shop' });
+  try {
+    const merchandise = await shopMerchandise(req.app.locals.db, shop.id);
+    res.json({
+      restockId: merchandise.listings.length ? merchandise.listings[0].restock_id : null,
+      paused: merchandise.paused,
+      listings: merchandise.listings.map((l) => ({ id: l.id, remaining: l.remaining_quantity })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
   const shop = findShop(req.params.id);
   if (!shop) return shopNotFound(res);
@@ -109,8 +127,19 @@ async function renderShop(req, res, shop, { status, error }) {
       requestId: crypto.randomUUID(),
     })),
     paused: merchandise.paused,
+    restockMessage: restockMessage(shop, merchandise),
+    currentRestockId: merchandise.listings.length ? merchandise.listings[0].restock_id : null,
     error,
   });
+}
+
+// What the shop says about its shelves. Never the next restock time.
+function restockMessage(shop, merchandise) {
+  if (merchandise.paused) return `The shutters are down. ${shop.keeper.name} is not restocking at the moment.`;
+  if (!merchandise.lastRestockAt) return `${shop.keeper.name} is still unpacking the first delivery.`;
+  const minutes = Math.floor((Date.now() - new Date(merchandise.lastRestockAt).getTime()) / 60000);
+  const ago = minutes < 1 ? 'moments ago' : minutes === 1 ? 'a minute ago' : minutes < 60 ? `${minutes} minutes ago` : minutes < 120 ? 'about an hour ago' : `${Math.floor(minutes / 60)} hours ago`;
+  return `${shop.keeper.name} last restocked the shelves ${ago}. New stock arrives whenever it arrives.`;
 }
 
 function purchaseMessage(result) {

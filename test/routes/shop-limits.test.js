@@ -7,6 +7,9 @@ import { ensureShopStates, restockShop } from '../../src/game/restocking.js';
 import { SHOP_LIMITS } from '../../src/game/shop-limits.js';
 import { pruneActivityLog } from '../../src/game/activity.js';
 import { findActivityByUser, findBusiestAccounts } from '../../src/db/activity-log.js';
+import { waitForFreshWindow } from '../helpers/rate-limit-window.js';
+
+const MINUTE = 60 * 1000;
 
 async function listingForm(server, listingId) {
   const page = await server.request('/shops/questionable-grocer');
@@ -24,6 +27,7 @@ async function stocked(server) {
 test('shop page views are limited per account and the limit is logged', async () => {
   const server = await startTestServer();
   try {
+    await waitForFreshWindow(MINUTE);
     const userId = await server.registerAndLogIn('wobble');
     let last;
     for (let i = 0; i < SHOP_LIMITS.shopViewsPerMinutePerAccount + 1; i++) {
@@ -42,6 +46,7 @@ test('shop page views are limited per account and the limit is logged', async ()
 test('view limits persist across an application restart', async () => {
   const server = await startTestServer();
   try {
+    await waitForFreshWindow(MINUTE);
     await server.registerAndLogIn('wobble');
     for (let i = 0; i < SHOP_LIMITS.shopViewsPerMinutePerAccount; i++) await server.request('/shops');
     const second = createApp({ db: server.db }).listen(0);
@@ -64,6 +69,7 @@ test('accounts sharing one address each get their own allowance, within a larger
     const perAddress = SHOP_LIMITS.shopViewsPerMinutePerIp;
     assert.equal(perAddress, 2 * perAccount, 'this test assumes the address allowance is twice the account allowance');
 
+    await waitForFreshWindow(MINUTE, 15000);
     await server.registerAndLogIn('first');
     for (let i = 0; i < perAccount; i++) assert.equal((await server.request('/shops', { headers: ip })).status, 200);
     assert.equal((await server.request('/shops', { headers: ip })).status, 429, 'first account is at its own limit');
@@ -87,6 +93,7 @@ test('accounts sharing one address each get their own allowance, within a larger
 test('purchase attempts are limited per minute', async () => {
   const server = await startTestServer();
   try {
+    await waitForFreshWindow(MINUTE);
     await server.registerAndLogIn('wobble');
     const listing = await stocked(server);
     const form = await listingForm(server, listing.id);
@@ -106,6 +113,7 @@ test('purchase attempts are limited per minute', async () => {
 test('repeated refused purchases pause buying, and each refusal is logged with its kind', async () => {
   const server = await startTestServer();
   try {
+    await waitForFreshWindow(5 * MINUTE);
     const userId = await server.registerAndLogIn('wobble');
     const listing = await stocked(server);
     await server.db.query('UPDATE shop_stock SET remaining_quantity = 0 WHERE id = $1', [listing.id]);

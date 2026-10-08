@@ -250,8 +250,10 @@ a:has(> .picture-placeholder) { text-decoration: none; }
 .sold-out .item-icon { opacity: 0.5; }
 .sold-out-label { color: #a33; }
 .price { font-weight: bold; color: #7a4a00; }
-.buy-form { margin-top: 6px; }
-.buy-form input[type="number"] { width: 52px; padding: 3px; font: inherit; border: 1px solid var(--content-border); }
+.buy-form { margin-top: 6px; display: flex; justify-content: center; align-items: stretch; gap: 4px; }
+.buy-form input[type="number"] { width: 56px; min-height: 36px; padding: 3px; font: inherit; border: 1px solid var(--content-border); }
+.buy-form button { min-height: 36px; min-width: 64px; }
+.restock-message { margin-bottom: 8px; }
 
 /* ----- Inventory ----- */
 

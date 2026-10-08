@@ -61,3 +61,8 @@ export async function addCoins(db, userId, amount, maxCoins) {
   );
   return result.rowCount;
 }
+
+export async function findUserByUsername(db, username) {
+  const { rows } = await db.query(`SELECT ${USER_COLUMNS} FROM users WHERE lower(username) = lower($1)`, [username]);
+  return rows[0] || null;
+}

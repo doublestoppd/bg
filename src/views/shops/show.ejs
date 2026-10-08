@@ -38,14 +38,16 @@
 </ul>
 
 <h2 class="section-title">On the shelves today</h2>
-<% if (paused) { %>
-<p class="muted">The shutters are down. <%= shop.keeper.name %> is not restocking at the moment.</p>
-<% } else if (listings.length === 0) { %>
+<p class="muted restock-message"><%= restockMessage %></p>
+<div class="notice notice-success shelves-changed" hidden>
+  <p>The shelves have changed since this page was loaded. <a href="/shops/<%= shop.id %>">Have a look</a>.</p>
+</div>
+<% if (!paused && listings.length === 0) { %>
 <p class="muted">The shelves are bare. <%= shop.keeper.name %> mutters something about a delivery.</p>
-<% } else { %>
-<ul class="item-grid">
+<% } else if (!paused) { %>
+<ul class="item-grid shelves" data-shop="<%= shop.id %>" data-restock="<%= currentRestockId %>">
   <% for (const listing of listings) { %>
-  <li class="item-box rarity-<%= listing.rarity %><%= listing.remaining_quantity === 0 ? ' sold-out' : '' %>">
+  <li class="item-box rarity-<%= listing.rarity %><%= listing.remaining_quantity === 0 ? ' sold-out' : '' %>" data-listing="<%= listing.id %>">
     <%- include('../partials/picture', { src: listing.image, alt: listing.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
     <div class="item-name"><%= listing.name %></div>
     <div class="muted item-meta"><%= listing.rarity %> <%= listing.category %></div>
@@ -54,7 +56,7 @@
     <% if (listing.remaining_quantity === 0) { %>
     <div class="stock-count sold-out-label">Sold out</div>
     <% } else { %>
-    <div class="stock-count"><%= listing.remaining_quantity %> left</div>
+    <div class="stock-count"><span class="remaining"><%= listing.remaining_quantity %></span> left</div>
     <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
       <%- include('../partials/csrf') %>
       <input type="hidden" name="request_id" value="<%= listing.requestId %>">
@@ -72,4 +74,5 @@
 
 <p><a href="/shops">Back to all shops</a> &middot; <a href="/inventory">Your inventory</a></p>
 
+<script src="/js/shop.js"></script>
 <%- include('../partials/footer') %>

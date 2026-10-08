@@ -2,8 +2,7 @@
 
 How Blobgarden's NPC shops are defined, stocked, bought from, protected,
 and operated. Written for a JavaScript developer who is not a database
-specialist. (The admin utility is added in a later milestone; this
-document grows with it.)
+specialist.
 
 ## The idea
 
@@ -23,6 +22,8 @@ and no reservation: whoever's purchase commits first gets the item.
 | Schedules, current stock, history | PostgreSQL tables (below) |
 | The background tick that restocks due shops | `src/scheduler.js` |
 | The shop pages | `src/routes/shops.js`, `src/views/shops/` |
+| Optional in-page stock refresh | `src/public/js/shop.js` |
+| Administrator operations | `src/game/shop-admin.js`, run through `scripts/shop-admin.js` |
 
 ## Defining a shop
 
@@ -315,6 +316,70 @@ until then.
 * **Configure account eligibility**: `eligibility: { minAccountAgeHours,
   requiresPet }` on a pool entry.
 * **Stop selling something**: remove its entry. Players keep what they own.
+
+## The shop page
+
+Each shop page shows the header and keeper artwork (placeholders until the
+files exist), a line of the keeper's dialogue, the player's coins, the
+essentials with buy forms, then "On the shelves today": the current
+listings with price, remaining count, and a buy form, or "Sold out". A
+line above the shelves says how long ago the last restock was, never when
+the next one is.
+
+Everything works with plain forms. `public/js/shop.js` is an optional
+extra: once a minute, while the tab is visible, it fetches
+`/shops/<id>/stock.json` (remaining quantities and the current restock id,
+nothing more, under the same rate limits as the page) and updates the
+numbers in place, turns listings that sold out into "Sold out", and shows
+a reload notice if a restock has replaced the shelves. If the script does
+not run, nothing is lost but the live numbers.
+
+## Operations
+
+All operations use `npm run shop-admin -- <command>`, run on the server
+with the game's `.env`. Access to that machine and those credentials is
+the authorisation; there is no web interface for administration. Every
+action that changes something requires `--by <name>` and is recorded with
+that name, so the history always says who did what.
+
+| Task | Command |
+|---|---|
+| List shops with paused state and schedule | `npm run shop-admin -- shops` |
+| Inspect current stock | `npm run shop-admin -- stock questionable-grocer` |
+| Review restock history | `npm run shop-admin -- history questionable-grocer --limit 20` |
+| Review a shop's purchases | `npm run shop-admin -- purchases questionable-grocer --limit 50` |
+| Everything about one account | `npm run shop-admin -- account wobble` |
+| Accounts with the most logged events | `npm run shop-admin -- suspicious --hours 24` |
+| Pause automatic restocks | `npm run shop-admin -- pause questionable-grocer --by yourname` |
+| Resume them | `npm run shop-admin -- resume questionable-grocer --by yourname` |
+| Restock now | `npm run shop-admin -- restock questionable-grocer --by yourname` |
+| Stop an account buying limited stock | `npm run shop-admin -- restrict wobble --reason "..." --hours 48 --by yourname` |
+| Lift that | `npm run shop-admin -- unrestrict wobble --by yourname` |
+
+A manual restock goes through exactly the same function as the scheduler:
+it takes the shop lock, replaces the shelves, obeys daily caps, and is
+recorded in `shop_restock_events` with `triggered_by = admin:<name>`. A
+paused shop can still be restocked by hand. Omit `--hours` on a
+restriction to make it last until lifted.
+
+### Diagnosing a failed purchase
+
+1. `npm run shop-admin -- account <username>` lists the account's recent
+   activity. Each refused purchase is there with its kind (`sold_out`,
+   `expired_listing`, `limit_exceeded`, `ineligible`, `restricted`,
+   `price_changed`, `bad_request`), the listing id, the address, and the
+   exact message the player saw.
+2. `stock <shop>` shows whether the listing is still active and what is
+   left; `history <shop>` shows whether a restock replaced it (the
+   listing's `restock_id` will be an older, superseded event).
+3. A purchase that succeeded is in the account's purchase list with its
+   listing id; its coin movement is in `coin_transactions` with that
+   `purchase_id`. If a player says they were charged without receiving the
+   item, that cannot happen inside one transaction: look for the purchase
+   row. If it exists, the item was granted in the same transaction; check
+   the inventory table and the 999 stack limit.
+4. Rate-limit refusals are logged as `rate_limited` with the limit that
+   fired in `details.scope`.
 
 ## Deterministic testing
 

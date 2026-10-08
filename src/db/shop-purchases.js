@@ -44,3 +44,14 @@ export async function countListingPurchasesSince(db, userId, since) {
   );
   return rows[0].n;
 }
+
+export async function findPurchasesByShop(db, shopId, limit = 50) {
+  const { rows } = await db.query(
+    `SELECT shop_purchases.id, users.username, shop_purchases.item_id, shop_purchases.quantity, shop_purchases.unit_price,
+            shop_purchases.total_cost, shop_purchases.stock_id, shop_purchases.restock_id, shop_purchases.created_at
+     FROM shop_purchases JOIN users ON users.id = shop_purchases.user_id
+     WHERE shop_purchases.shop_id = $1 ORDER BY shop_purchases.id DESC LIMIT $2`,
+    [shopId, limit],
+  );
+  return rows;
+}

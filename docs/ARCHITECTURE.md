@@ -56,6 +56,7 @@ src/
     shop-limits.js every anti-abuse number in one place
     eligibility.js who may buy limited stock
     activity.js    the shop activity log
+    shop-admin.js  administrator operations (used by scripts/shop-admin.js)
     inventory.js   granting and taking items
     currency.js    the only place coin balances change; writes the ledger
     purchases.js   buying from a shop
@@ -64,7 +65,7 @@ src/
   routes/          one file per area of the site
   views/           EJS templates and partials
   public/          CSS, browser JavaScript, images
-scripts/           migrate and (development only) reset the database
+scripts/           migrate, reset (development only), and the shop-admin utility
 test/              mirrors src/; run with npm test
 docs/              this file
 ```
@@ -91,6 +92,10 @@ exists.
 **Middleware** (`src/middleware`) is small and generic: CSRF checking, loading
 the logged-in user, redirecting guests away from protected pages, one-shot
 flash messages, and a rate limiter backed by the `request_counters` table.
+
+**Browser JavaScript** (`src/public/js`) only enhances pages that already
+work without it. `shop.js` refreshes stock counts once a minute; nothing a
+player can do depends on it.
 
 ## Database access
 
