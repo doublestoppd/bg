@@ -13,7 +13,7 @@ Required Technology
 * EJS for server-rendered HTML templates.
 * Vanilla JavaScript for browser interactions.
 * Plain CSS for styling and responsive layouts.
-* SQLite using better-sqlite3.
+* PostgreSQL using pg (node-postgres).
 * Plain, parameterized SQL queries rather than an ORM.
 * Node.js built-in test runner.
 

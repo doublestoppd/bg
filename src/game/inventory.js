@@ -1,31 +1,33 @@
 import { GameRuleError } from './errors.js';
 import { findItem } from './items.js';
+import { assertInTransaction } from '../db/pool.js';
 import { addToStack, findStack, findInventoryByOwner, removeFromStack } from '../db/inventory.js';
 
 // ----- Tunable rules -----
 // The most of one item a player can hold. The inventory table enforces
-// the same ceiling (see migration 003), so raising this needs a migration.
+// the same ceiling (see the migration), so raising this needs a migration.
 export const MAX_STACK_SIZE = 999;
 
 // Everything the player owns, newest catalog data attached. Rows for
 // retired items come back too (players keep what they own) but with
 // `usable: false`, since the catalog no longer describes them.
-export function listInventory(db, userId) {
-  return findInventoryByOwner(db, userId).map((row) => ({
+export async function listInventory(db, userId) {
+  const rows = await findInventoryByOwner(db, userId);
+  return rows.map((row) => ({
     ...row,
-    effects: JSON.parse(row.effects),
-    usable: row.retired === 0 && findItem(row.item_id) !== null,
+    usable: !row.retired && findItem(row.item_id) !== null,
   }));
 }
 
-export function countOwned(db, userId, itemId) {
-  const stack = findStack(db, userId, itemId);
+export async function countOwned(db, userId, itemId) {
+  const stack = await findStack(db, userId, itemId);
   return stack ? stack.quantity : 0;
 }
 
 // Gives a player some of an item. Only items the catalog still hands out
-// can be granted, and a stack can never exceed MAX_STACK_SIZE.
-export function grantItem(db, userId, itemId, quantity) {
+// can be granted, and a stack can never exceed MAX_STACK_SIZE. This is a
+// single statement, so it may run on the pool or inside a transaction.
+export async function grantItem(db, userId, itemId, quantity) {
   const item = findItem(itemId);
   if (!item) {
     throw new GameRuleError('That item does not exist.');
@@ -34,16 +36,18 @@ export function grantItem(db, userId, itemId, quantity) {
     throw new GameRuleError(`${item.name} is no longer being handed out.`);
   }
   assertValidQuantity(quantity);
-  if (!addToStack(db, userId, itemId, quantity, MAX_STACK_SIZE)) {
+  if (!(await addToStack(db, userId, itemId, quantity, MAX_STACK_SIZE))) {
     throw new GameRuleError(`You cannot carry more than ${MAX_STACK_SIZE} of one thing.`);
   }
 }
 
 // Removes some of an item from a player, failing if they do not have
-// enough. The database does the ownership and quantity check in one step.
-export function takeItem(db, userId, itemId, quantity) {
+// enough. Always part of a larger change (feeding, later trading), so it
+// insists on a transaction.
+export async function takeItem(db, userId, itemId, quantity) {
+  assertInTransaction(db, 'takeItem');
   assertValidQuantity(quantity);
-  if (!removeFromStack(db, userId, itemId, quantity)) {
+  if (!(await removeFromStack(db, userId, itemId, quantity))) {
     throw new GameRuleError('You do not have enough of that item.');
   }
 }

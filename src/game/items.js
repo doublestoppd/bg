@@ -1,7 +1,8 @@
+import { withTransaction } from '../db/pool.js';
 import { upsertItem, retireItemsNotIn } from '../db/items.js';
 
 // The item catalog. This file is the authoritative list of every item in
-// the game; the items table in SQLite is a synchronised copy.
+// the game; the items table in PostgreSQL is a synchronised copy.
 //
 // To add an item, append an object to the list below and restart the
 // server (syncItemCatalog runs at startup). Rules:
@@ -105,13 +106,13 @@ export function findItem(id) {
 // startup: existing rows are updated in place, new ones inserted, and rows
 // for items no longer in the catalog are marked retired rather than
 // deleted, so player inventories are never touched.
-export function syncItemCatalog(db, catalog = items) {
-  db.transaction(() => {
+export async function syncItemCatalog(pool, catalog = items) {
+  await withTransaction(pool, async (db) => {
     for (const item of catalog) {
-      upsertItem(db, { ...item, effects: JSON.stringify(item.effects) });
+      await upsertItem(db, item);
     }
-    retireItemsNotIn(db, catalog.map((item) => item.id));
-  })();
+    await retireItemsNotIn(db, catalog.map((item) => item.id));
+  });
 }
 
 // Catches catalog mistakes at startup instead of at the moment a player

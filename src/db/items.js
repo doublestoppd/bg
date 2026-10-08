@@ -1,31 +1,33 @@
 // All SQL for the items table (the synchronised copy of the catalog).
 
-export function upsertItem(db, { id, name, description, category, rarity, image, effects, obtainable }) {
-  db.prepare(`
-    INSERT INTO items (id, name, description, category, rarity, image, effects, obtainable, retired)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-    ON CONFLICT(id) DO UPDATE SET
-      name = excluded.name,
-      description = excluded.description,
-      category = excluded.category,
-      rarity = excluded.rarity,
-      image = excluded.image,
-      effects = excluded.effects,
-      obtainable = excluded.obtainable,
-      retired = 0
-  `).run(id, name, description, category, rarity, image, effects, obtainable ? 1 : 0);
+export async function upsertItem(db, { id, name, description, category, rarity, image, effects, obtainable }) {
+  await db.query(
+    `INSERT INTO items (id, name, description, category, rarity, image, effects, obtainable, retired)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
+     ON CONFLICT (id) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       category = excluded.category,
+       rarity = excluded.rarity,
+       image = excluded.image,
+       effects = excluded.effects,
+       obtainable = excluded.obtainable,
+       retired = false`,
+    [id, name, description, category, rarity, image, effects, obtainable],
+  );
 }
 
 // Marks every item not in the given list as retired. Nothing is deleted.
-export function retireItemsNotIn(db, liveIds) {
-  const placeholders = liveIds.map(() => '?').join(', ');
-  db.prepare(`UPDATE items SET retired = 1 WHERE id NOT IN (${placeholders})`).run(...liveIds);
+export async function retireItemsNotIn(db, liveIds) {
+  await db.query('UPDATE items SET retired = true WHERE id <> ALL($1::text[])', [liveIds]);
 }
 
-export function findItemRow(db, id) {
-  return db.prepare('SELECT * FROM items WHERE id = ?').get(id) || null;
+export async function findItemRow(db, id) {
+  const { rows } = await db.query('SELECT * FROM items WHERE id = $1', [id]);
+  return rows[0] || null;
 }
 
-export function allItemRows(db) {
-  return db.prepare('SELECT * FROM items ORDER BY id').all();
+export async function allItemRows(db) {
+  const { rows } = await db.query('SELECT * FROM items ORDER BY id');
+  return rows;
 }

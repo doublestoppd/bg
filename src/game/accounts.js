@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { GameRuleError } from './errors.js';
+import { withTransaction } from '../db/pool.js';
 import { findUserByUsernameWithPassword, insertUser, usernameExists } from '../db/users.js';
 import { grantItem } from './inventory.js';
 import { awardCoins } from './currency.js';
@@ -19,7 +20,7 @@ export const WELCOME_ITEMS = [
 const USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
 
 // Creates a new account and returns the user row (without the password).
-export async function registerAccount(db, { username, password }) {
+export async function registerAccount(pool, { username, password }) {
   const cleanUsername = String(username || '').trim();
 
   if (cleanUsername.length < USERNAME_MIN_LENGTH || cleanUsername.length > USERNAME_MAX_LENGTH) {
@@ -33,30 +34,30 @@ export async function registerAccount(db, { username, password }) {
   }
 
   // Hashing is slow by design, so it happens before the transaction;
-  // better-sqlite3 transactions must not contain any awaits.
+  // the transaction below stays short and holds no locks while hashing.
   const passwordHash = await hashPassword(password);
 
-  // The check and the insert happen in one transaction so two people
-  // registering the same name at once cannot both succeed.
-  return db.transaction(() => {
-    if (usernameExists(db, cleanUsername)) {
+  // The check and the insert happen in one transaction; the unique index
+  // on the username is the final guard if two people race for one name.
+  return withTransaction(pool, async (db) => {
+    if (await usernameExists(db, cleanUsername)) {
       throw new GameRuleError('That username is already taken.');
     }
-    const user = insertUser(db, { username: cleanUsername, passwordHash, coins: 0 });
+    const user = await insertUser(db, { username: cleanUsername, passwordHash, coins: 0 });
     // The starting purse goes through the ledger like every other change.
-    user.coins = awardCoins(db, user.id, STARTING_COINS, { reason: 'welcome' });
+    user.coins = await awardCoins(db, user.id, STARTING_COINS, { reason: 'welcome' });
     for (const gift of WELCOME_ITEMS) {
-      grantItem(db, user.id, gift.itemId, gift.quantity);
+      await grantItem(db, user.id, gift.itemId, gift.quantity);
     }
     return user;
-  })();
+  });
 }
 
 // Checks a username and password. Returns the user row on success.
 // The error message is deliberately the same whether the username or the
 // password was wrong, so the form cannot be used to discover usernames.
 export async function authenticate(db, { username, password }) {
-  const user = findUserByUsernameWithPassword(db, String(username || '').trim());
+  const user = await findUserByUsernameWithPassword(db, String(username || '').trim());
   const passwordOk = user !== null && await verifyPassword(String(password || ''), user.password_hash);
   if (!passwordOk) {
     throw new GameRuleError('That username and password do not match.');

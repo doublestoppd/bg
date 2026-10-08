@@ -8,8 +8,8 @@ const router = Router();
 
 router.use(requireLogin);
 
-router.get('/', (req, res) => {
-  const pets = listPets(req.app.locals.db, req.currentUser.id);
+router.get('/', async (req, res) => {
+  const pets = await listPets(req.app.locals.db, req.currentUser.id);
   res.render('pets/index', { title: 'My Pets', pets, maxPets: MAX_PETS_PER_PLAYER });
 });
 
@@ -17,9 +17,9 @@ router.get('/adopt', (req, res) => {
   res.render('pets/adopt', { title: 'Adopt a Pet', species: allSpecies(), error: null, name: '', chosen: '' });
 });
 
-router.post('/adopt', (req, res, next) => {
+router.post('/adopt', async (req, res, next) => {
   try {
-    const pet = adoptPet(req.app.locals.db, req.currentUser.id, {
+    const pet = await adoptPet(req.app.locals.db, req.currentUser.id, {
       name: req.body.name,
       species: req.body.species,
     });
@@ -38,8 +38,8 @@ router.post('/adopt', (req, res, next) => {
   }
 });
 
-router.get('/:id', (req, res) => {
-  const pet = getPet(req.app.locals.db, req.currentUser.id, req.params.id);
+router.get('/:id', async (req, res) => {
+  const pet = await getPet(req.app.locals.db, req.currentUser.id, req.params.id);
   if (!pet) {
     return res.status(404).render('error', {
       title: 'Pet not found',

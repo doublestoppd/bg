@@ -8,13 +8,13 @@ const router = Router();
 
 router.use(requireLogin);
 
-router.get('/', (req, res) => {
-  renderInventory(req, res, { status: 200, error: null });
+router.get('/', async (req, res, next) => {
+  renderInventory(req, res, { status: 200, error: null }).catch(next);
 });
 
-router.post('/feed', (req, res, next) => {
+router.post('/feed', async (req, res, next) => {
   try {
-    const result = feedPet(req.app.locals.db, req.currentUser.id, {
+    const result = await feedPet(req.app.locals.db, req.currentUser.id, {
       petId: req.body.pet,
       itemId: req.body.item,
     });
@@ -27,18 +27,18 @@ router.post('/feed', (req, res, next) => {
     res.redirect('/inventory');
   } catch (error) {
     if (error instanceof GameRuleError) {
-      return renderInventory(req, res, { status: 400, error: error.message });
+      return renderInventory(req, res, { status: 400, error: error.message }).catch(next);
     }
     next(error);
   }
 });
 
-function renderInventory(req, res, { status, error }) {
+async function renderInventory(req, res, { status, error }) {
   const db = req.app.locals.db;
   res.status(status).render('inventory/index', {
     title: 'Inventory',
-    items: listInventory(db, req.currentUser.id),
-    pets: listPets(db, req.currentUser.id),
+    items: await listInventory(db, req.currentUser.id),
+    pets: await listPets(db, req.currentUser.id),
     error,
   });
 }

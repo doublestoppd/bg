@@ -1,72 +1,54 @@
 import { Store } from 'express-session';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
-// A session store that keeps express-session data in our SQLite database,
-// so logins survive server restarts. express-session expects the methods
-// get, set, destroy and touch, each reporting back through a callback.
-export class SqliteSessionStore extends Store {
-  constructor(db) {
+// A session store that keeps express-session data in PostgreSQL, so logins
+// survive server restarts and are shared between server processes.
+// express-session expects get, set, destroy and touch, each reporting back
+// through a callback; the async methods below are wrapped accordingly.
+export class PgSessionStore extends Store {
+  constructor(pool) {
     super();
-    this.db = db;
-    this.statements = {
-      // expires_at is stored as an ISO 8601 string ("2026-01-01T12:00:00.000Z")
-      // while datetime('now') produces "2026-01-01 12:00:00". The two formats
-      // do not sort together as plain text, so both sides must go through
-      // datetime() before comparing.
-      get: db.prepare("SELECT data FROM sessions WHERE sid = ? AND datetime(expires_at) > datetime('now')"),
-      set: db.prepare('INSERT OR REPLACE INTO sessions (sid, data, expires_at) VALUES (?, ?, ?)'),
-      destroy: db.prepare('DELETE FROM sessions WHERE sid = ?'),
-      touch: db.prepare('UPDATE sessions SET expires_at = ? WHERE sid = ?'),
-      deleteExpired: db.prepare("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')"),
-    };
-
-    // Sweep out expired rows now and then. unref() lets the process exit
-    // (for example when tests finish) without waiting on this timer.
-    this.cleanupTimer = setInterval(() => this.deleteExpired(), CLEANUP_INTERVAL_MS);
-    this.cleanupTimer.unref();
+    this.pool = pool;
   }
 
   get(sid, callback) {
-    try {
-      const row = this.statements.get.get(sid);
-      callback(null, row ? JSON.parse(row.data) : null);
-    } catch (error) {
-      callback(error);
-    }
+    this.pool
+      .query('SELECT data FROM sessions WHERE sid = $1 AND expires_at > now()', [sid])
+      .then(({ rows }) => callback(null, rows.length ? rows[0].data : null))
+      .catch(callback);
   }
 
   set(sid, sessionData, callback) {
-    try {
-      this.statements.set.run(sid, JSON.stringify(sessionData), expiryFor(sessionData));
-      callback(null);
-    } catch (error) {
-      callback(error);
-    }
+    this.pool
+      .query(
+        `INSERT INTO sessions (sid, data, expires_at) VALUES ($1, $2, $3)
+         ON CONFLICT (sid) DO UPDATE SET data = excluded.data, expires_at = excluded.expires_at`,
+        [sid, sessionData, expiryFor(sessionData)],
+      )
+      .then(() => callback(null))
+      .catch(callback);
   }
 
   destroy(sid, callback) {
-    try {
-      this.statements.destroy.run(sid);
-      callback(null);
-    } catch (error) {
-      callback(error);
-    }
+    this.pool
+      .query('DELETE FROM sessions WHERE sid = $1', [sid])
+      .then(() => callback(null))
+      .catch(callback);
   }
 
   touch(sid, sessionData, callback) {
-    try {
-      this.statements.touch.run(expiryFor(sessionData), sid);
-      callback(null);
-    } catch (error) {
-      callback(error);
-    }
+    this.pool
+      .query('UPDATE sessions SET expires_at = $1 WHERE sid = $2', [expiryFor(sessionData), sid])
+      .then(() => callback(null))
+      .catch(callback);
   }
+}
 
-  deleteExpired() {
-    this.statements.deleteExpired.run();
-  }
+// Removes sessions past their expiry; the scheduler calls this now and then.
+export async function deleteExpiredSessions(db) {
+  const result = await db.query('DELETE FROM sessions WHERE expires_at <= now()');
+  return result.rowCount;
 }
 
 // Works out when a session should expire from the cookie settings
@@ -74,8 +56,8 @@ export class SqliteSessionStore extends Store {
 function expiryFor(sessionData) {
   const cookie = sessionData && sessionData.cookie;
   if (cookie && cookie.expires) {
-    return new Date(cookie.expires).toISOString();
+    return new Date(cookie.expires);
   }
   const maxAge = cookie && cookie.maxAge ? cookie.maxAge : ONE_DAY_MS;
-  return new Date(Date.now() + maxAge).toISOString();
+  return new Date(Date.now() + maxAge);
 }

@@ -4,7 +4,7 @@ import express from 'express';
 import session from 'express-session';
 import config from './config.js';
 import site from './site.js';
-import { SqliteSessionStore } from './db/sessions.js';
+import { PgSessionStore } from './db/sessions.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { createRateLimiter } from './middleware/rate-limit.js';
 import { loadCurrentUser } from './middleware/current-user.js';
@@ -24,7 +24,7 @@ const srcDir = path.dirname(fileURLToPath(import.meta.url));
 export function createApp({ db, trustProxy = config.trustProxy, secureCookies = config.isProduction }) {
   const app = express();
 
-  app.locals.db = db;
+  app.locals.db = db; // the pg.Pool; routes pass it to game functions
   // Lets req.ip and req.secure reflect the real client when a reverse proxy
   // forwards requests. express-session reads the same setting to decide
   // whether a 'secure' cookie may be sent.
@@ -38,7 +38,7 @@ export function createApp({ db, trustProxy = config.trustProxy, secureCookies = 
   app.use(express.urlencoded({ extended: false }));
 
   app.use(session({
-    store: new SqliteSessionStore(db),
+    store: new PgSessionStore(db),
     secret: config.sessionSecret,
     name: 'bg.sid',
     resave: false,
@@ -65,9 +65,9 @@ export function createApp({ db, trustProxy = config.trustProxy, secureCookies = 
   // --- Routes ---
 
   // Slow down password guessing and bulk account creation. These run before
-  // the matching handlers in authRoutes and only count attempts per IP.
-  app.post('/login', createRateLimiter({ maxAttempts: 10, windowMs: 15 * 60 * 1000 }));
-  app.post('/register', createRateLimiter({ maxAttempts: 5, windowMs: 60 * 60 * 1000 }));
+  // the matching handlers in authRoutes and count attempts per IP.
+  app.post('/login', createRateLimiter({ scope: 'login:ip', maxAttempts: 10, windowMs: 15 * 60 * 1000 }));
+  app.post('/register', createRateLimiter({ scope: 'register:ip', maxAttempts: 5, windowMs: 60 * 60 * 1000 }));
 
   app.use('/', homeRoutes);
   app.use('/', authRoutes);

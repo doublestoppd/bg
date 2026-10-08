@@ -1,12 +1,13 @@
 # Blobgarden
 
 An original browser-based virtual pet game in the spirit of the early-2000s
-web. Server-rendered pages, plain forms and links, SQLite on disk, and no
-build step.
+web. Server-rendered pages, plain forms and links, PostgreSQL for all game
+data, and no build step.
 
 ## Requirements
 
-* Node.js 22 or newer (required by better-sqlite3)
+* Node.js 22 or newer
+* PostgreSQL 14 or newer (16 is what development uses)
 * npm
 
 ## Installation
@@ -15,9 +16,40 @@ build step.
 npm install
 ```
 
-This compiles the `better-sqlite3` native module, which needs a C++ toolchain
-on your machine. Prebuilt binaries exist for common platforms so this usually
-just works.
+### Create the databases
+
+The game needs one database to run and a second, throwaway one for the
+test suite. With PostgreSQL running locally, as a superuser:
+
+```
+psql -U postgres <<'SQL'
+CREATE ROLE blobgarden LOGIN PASSWORD 'blobgarden';
+CREATE DATABASE blobgarden_dev OWNER blobgarden;
+CREATE DATABASE blobgarden_test OWNER blobgarden;
+SQL
+```
+
+Use your own password outside a local development machine.
+
+### Configure
+
+```
+cp .env.example .env
+```
+
+Edit `.env` so `DATABASE_URL` and `TEST_DATABASE_URL` match the databases
+you created. Every npm script loads `.env` automatically; nothing in it is
+committed to git.
+
+### Create the tables
+
+```
+npm run db:migrate
+```
+
+This applies every file in `src/db/migrations` that has not been applied
+yet, in order. The server also runs it on startup, so a deploy that adds a
+migration needs no separate step. It is safe to run any number of times.
 
 ## Running the game
 
@@ -25,25 +57,46 @@ just works.
 npm start
 ```
 
-Then open http://localhost:3000.
-
-For development, `npm run dev` restarts the server whenever a file changes.
-
-The database file is created automatically at `data/game.sqlite` on first
-start. Delete that file to start over with a clean world.
+Then open http://localhost:3000. For development, `npm run dev` restarts
+the server whenever a file changes.
 
 ## Settings
 
-Every setting has a development default and can be overridden with an
-environment variable:
+Every setting is read from the environment (see `.env.example`):
 
-| Variable         | Default                          | Purpose                               |
-|------------------|----------------------------------|---------------------------------------|
-| `PORT`           | `3000`                           | Port the web server listens on        |
-| `DATABASE_PATH`  | `data/game.sqlite`               | Where the SQLite file lives           |
-| `SESSION_SECRET` | a fixed development value        | Signs login cookies. Set it in production. |
-| `NODE_ENV`       | unset                            | Set to `production` to require a real secret and secure cookies |
-| `TRUST_PROXY`    | unset                            | Set to `1` (or another hop count) when a reverse proxy sits in front of the game |
+| Variable            | Default                          | Purpose                               |
+|---------------------|----------------------------------|---------------------------------------|
+| `DATABASE_URL`      | none, required                   | PostgreSQL connection string          |
+| `TEST_DATABASE_URL` | none, required for `npm test`    | A separate database the tests wipe    |
+| `PORT`              | `3000`                           | Port the web server listens on        |
+| `SESSION_SECRET`    | a fixed development value        | Signs login cookies. Set it in production. |
+| `NODE_ENV`          | unset                            | Set to `production` to require a real secret and secure cookies |
+| `TRUST_PROXY`       | unset                            | Set to `1` (or another hop count) when a reverse proxy sits in front of the game |
+
+The server refuses to start without `DATABASE_URL`, and in production it
+refuses the default session secret.
+
+## Tests
+
+```
+npm test
+```
+
+Tests use Node's built-in test runner and a real PostgreSQL database named
+by `TEST_DATABASE_URL`. Every test starts by emptying that database, so it
+must never point at the development or production database (the helper
+refuses if the two URLs match). Test files run one at a time because they
+share the database; tests that check concurrency open several connections
+inside one test.
+
+## Resetting the development database
+
+```
+npm run db:reset -- --yes
+```
+
+Drops every table in `DATABASE_URL` and re-runs the migrations. It refuses
+to run when `NODE_ENV=production`. There is no undo.
 
 ## Running behind a reverse proxy
 
@@ -57,17 +110,20 @@ proxy's. Without it, nobody can log in to a production deployment behind a
 proxy, and every visitor shares one rate-limit bucket.
 
 Login and registration are rate limited per IP address (10 login attempts
-per 15 minutes, 5 registrations per hour). The counters live in memory and
-reset when the server restarts.
+per 15 minutes, 5 registrations per hour). The counters live in the
+database, so they survive restarts and are shared by every server process.
 
-## Tests
+## Deploying
 
-```
-npm test
-```
-
-Tests use Node's built-in test runner and an in-memory database, so they need
-no setup and leave nothing behind.
+1. Provision PostgreSQL and create a database and role for the game.
+2. Set `DATABASE_URL`, a long random `SESSION_SECRET`, `NODE_ENV=production`,
+   and `TRUST_PROXY` if a proxy is in front.
+3. `npm install --omit=dev` and `npm start`. Startup applies migrations,
+   loads the item catalog, and begins listening. Run one process to start
+   with; several processes against the same database are supported because
+   sessions, rate limits and all game state live in PostgreSQL.
+4. Stop the server with SIGTERM; it finishes requests in flight and closes
+   its connections.
 
 ## Adding items
 

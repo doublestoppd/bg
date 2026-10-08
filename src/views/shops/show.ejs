@@ -22,7 +22,7 @@
     <div class="price"><%= offer.price %> coins each</div>
     <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
       <%- include('../partials/csrf') %>
-      <input type="hidden" name="purchase_token" value="<%= purchaseToken %>">
+      <input type="hidden" name="request_id" value="<%= offer.requestId %>">
       <input type="hidden" name="item" value="<%= offer.item.id %>">
       <label class="visually-hidden" for="qty-<%= offer.item.id %>">Quantity</label>
       <input type="number" id="qty-<%= offer.item.id %>" name="quantity" value="1" min="1" max="<%= maxQuantity %>" required>

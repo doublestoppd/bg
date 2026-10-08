@@ -2,6 +2,7 @@ import { GameRuleError } from './errors.js';
 import { findSpecies } from './species.js';
 import { findItem } from './items.js';
 import { takeItem } from './inventory.js';
+import { withTransaction } from '../db/pool.js';
 import { countPetsByOwner, findPetForOwner, findPetsByOwner, insertPet, updatePetStats } from '../db/pets.js';
 
 // ----- Tunable rules -----
@@ -18,7 +19,7 @@ const STAT_NAMES = ['hunger', 'happiness', 'health'];
 const PET_NAME_PATTERN = /^[A-Za-z0-9' -]+$/;
 
 // Gives the player a new pet. Returns the pet row.
-export function adoptPet(db, userId, { name, species }) {
+export async function adoptPet(pool, userId, { name, species }) {
   const cleanName = String(name || '').trim().replace(/\s+/g, ' ');
 
   if (cleanName.length < PET_NAME_MIN_LENGTH || cleanName.length > PET_NAME_MAX_LENGTH) {
@@ -31,23 +32,27 @@ export function adoptPet(db, userId, { name, species }) {
     throw new GameRuleError('Please choose one of the available species.');
   }
 
-  // Counting and inserting happen together so two quick submissions cannot
-  // both slip under the limit.
-  return db.transaction(() => {
-    if (countPetsByOwner(db, userId) >= MAX_PETS_PER_PLAYER) {
+  // Counting and inserting happen in one transaction with the player's
+  // row locked, so two quick submissions cannot both slip under the limit.
+  return withTransaction(pool, async (db) => {
+    await db.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    if ((await countPetsByOwner(db, userId)) >= MAX_PETS_PER_PLAYER) {
       throw new GameRuleError(`You can look after at most ${MAX_PETS_PER_PLAYER} pets at once.`);
     }
     return insertPet(db, { userId, name: cleanName, species, ...STARTING_STATS });
-  })();
+  });
 }
 
-export function listPets(db, userId) {
-  return findPetsByOwner(db, userId).map(withSpecies);
+export async function listPets(db, userId) {
+  return (await findPetsByOwner(db, userId)).map(withSpecies);
 }
 
 // Returns the pet, or null if it does not exist or belongs to someone else.
-export function getPet(db, userId, petId) {
-  const pet = findPetForOwner(db, Number(petId), userId);
+// A non-numeric id is simply "not found".
+export async function getPet(db, userId, petId) {
+  const id = Number(petId);
+  if (!Number.isSafeInteger(id)) return null;
+  const pet = await findPetForOwner(db, id, userId);
   return pet ? withSpecies(pet) : null;
 }
 
@@ -59,7 +64,7 @@ function withSpecies(pet) {
 // Feeds one unit of a food item to the player's pet. The item leaves the
 // inventory and the pet's stats change inside one transaction, so a
 // failure at any step leaves both untouched.
-export function feedPet(db, userId, { petId, itemId }) {
+export async function feedPet(pool, userId, { petId, itemId }) {
   const item = findItem(itemId);
   if (!item) {
     throw new GameRuleError('That item is no longer part of the game and cannot be used.');
@@ -67,26 +72,35 @@ export function feedPet(db, userId, { petId, itemId }) {
   if (item.category !== 'food') {
     throw new GameRuleError('That is not something a pet can eat.');
   }
+  const id = Number(petId);
+  if (!Number.isSafeInteger(id)) {
+    throw new GameRuleError('That pet is not yours to feed.');
+  }
 
-  return db.transaction(() => {
-    const pet = findPetForOwner(db, Number(petId), userId);
+  return withTransaction(pool, async (db) => {
+    const pet = await findPetForOwner(db, id, userId);
     if (!pet) {
       throw new GameRuleError('That pet is not yours to feed.');
     }
-    if (pet.hunger >= STAT_MAX) {
-      throw new GameRuleError(`${pet.name} is too full to eat anything.`);
-    }
-
-    takeItem(db, userId, item.id, 1); // throws if the player has none
 
     const newStats = applyEffects(pet, item.effects);
-    const changed = updatePetStats(db, pet.id, userId, newStats);
+    // A pet refuses food only when eating it would change nothing: every
+    // stat the food affects is already at its cap. That way no item is
+    // wasted on a no-op, and a treat that mostly raises happiness still
+    // works on a pet whose hunger is full.
+    if (STAT_NAMES.every((stat) => newStats[stat] === pet[stat])) {
+      throw new GameRuleError(`${pet.name} is too full for that to make any difference.`);
+    }
+
+    await takeItem(db, userId, item.id, 1); // throws if the player has none
+
+    const changed = await updatePetStats(db, pet.id, userId, newStats);
     if (changed !== 1) {
       throw new Error(`Pet ${pet.id} could not be updated while feeding`);
     }
 
     return { pet: withSpecies({ ...pet, ...newStats }), before: pickStats(pet), item };
-  })();
+  });
 }
 
 // Adds each effect to the matching stat and keeps every stat within

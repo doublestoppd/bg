@@ -1,12 +1,29 @@
-import config from './config.js';
-import { openDatabase } from './db/connection.js';
-import { createApp } from './app.js';
+import config, { requireDatabaseUrl } from './config.js';
+import { createPool } from './db/pool.js';
+import { runMigrations } from './db/migrate.js';
 import { syncItemCatalog } from './game/items.js';
+import { createApp } from './app.js';
+import { startScheduler } from './scheduler.js';
 
-const db = openDatabase(config.databasePath);
-syncItemCatalog(db); // keep the items table in step with src/game/items.js
-const app = createApp({ db });
+const pool = createPool(requireDatabaseUrl());
+await runMigrations(pool);
+await syncItemCatalog(pool); // keep the items table in step with src/game/items.js
 
-app.listen(config.port, () => {
+const app = createApp({ db: pool });
+const scheduler = startScheduler(pool);
+
+const server = app.listen(config.port, () => {
   console.log(`Game running at http://localhost:${config.port}`);
 });
+
+// Stop taking requests, finish the ones in flight, then close the pool.
+async function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  scheduler.stop();
+  server.close(async () => {
+    await pool.end();
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

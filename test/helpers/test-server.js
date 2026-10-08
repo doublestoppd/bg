@@ -1,12 +1,12 @@
-import { openTestDatabase } from './test-database.js';
+import { resetDatabase } from './test-database.js';
 import { createApp } from '../../src/app.js';
 
-// Starts the real application on a random free port with an in-memory
+// Starts the real application on a random free port against the wiped test
 // database. Returns a small client that remembers cookies between requests,
 // so a test can log in and then visit protected pages like a browser would.
 // appOptions are passed through to createApp (for example trustProxy).
-export function startTestServer(appOptions = {}) {
-  const db = openTestDatabase();
+export async function startTestServer(appOptions = {}) {
+  const db = await resetDatabase();
   const app = createApp({ db, ...appOptions });
   const server = app.listen(0);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -36,10 +36,25 @@ export function startTestServer(appOptions = {}) {
     return match[1];
   }
 
-  function close() {
-    server.close();
-    db.close();
+  // Registers a player and leaves the client logged in. Returns the user id.
+  async function registerAndLogIn(username) {
+    const token = await csrfTokenFrom('/register');
+    await request('/register', {
+      method: 'POST',
+      form: { _csrf: token, username, password: 'correct horse' },
+    });
+    const { rows } = await db.query('SELECT id FROM users WHERE username = $1', [username]);
+    return rows[0].id;
   }
 
-  return { db, request, csrfTokenFrom, close };
+  async function logOut() {
+    const token = await csrfTokenFrom('/');
+    await request('/logout', { method: 'POST', form: { _csrf: token } });
+  }
+
+  function close() {
+    return new Promise((resolve) => server.close(resolve));
+  }
+
+  return { db, request, csrfTokenFrom, registerAndLogIn, logOut, close, cookieHeader: () => cookie };
 }

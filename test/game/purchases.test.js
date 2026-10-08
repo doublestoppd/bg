@@ -1,110 +1,145 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openTestDatabase } from '../helpers/test-database.js';
+import crypto from 'node:crypto';
+import { resetDatabase } from '../helpers/test-database.js';
+import { withTransaction } from '../../src/db/pool.js';
 import { registerAccount } from '../../src/game/accounts.js';
 import { purchaseItem, MAX_PURCHASE_QUANTITY } from '../../src/game/purchases.js';
 import { getBalance, awardCoins } from '../../src/game/currency.js';
 import { countOwned, grantItem, MAX_STACK_SIZE } from '../../src/game/inventory.js';
 import { findCoinTransactionsByUser } from '../../src/db/coin-transactions.js';
+import { findPurchasesByUser } from '../../src/db/shop-purchases.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
 const GROCER = 'questionable-grocer';
+const newRequestId = () => crypto.randomUUID();
 
 async function playerDb() {
-  const db = openTestDatabase();
+  const db = await resetDatabase();
   const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   return { db, user };
 }
 
-function snapshot(db, userId) {
+async function snapshot(db, userId) {
   return {
-    coins: getBalance(db, userId),
-    biscuits: countOwned(db, userId, 'soggy-biscuit'),
-    pebbles: countOwned(db, userId, 'fizzing-pebble'),
-    ledger: findCoinTransactionsByUser(db, userId).length,
+    coins: await getBalance(db, userId),
+    biscuits: await countOwned(db, userId, 'soggy-biscuit'),
+    pebbles: await countOwned(db, userId, 'fizzing-pebble'),
+    ledger: (await findCoinTransactionsByUser(db, userId)).length,
+    purchases: (await findPurchasesByUser(db, userId)).length,
   };
 }
 
-test('a purchase moves coins out, items in, and writes the ledger', async () => {
+test('a purchase moves coins out, items in, and writes the records', async () => {
   const { db, user } = await playerDb();
-  const result = purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 2 });
+  const result = await purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 2, requestId: newRequestId() });
   assert.equal(result.totalCost, 40);
   assert.equal(result.balance, 60);
-  assert.equal(getBalance(db, user.id), 60);
-  assert.equal(countOwned(db, user.id, 'fizzing-pebble'), 2);
-  const last = findCoinTransactionsByUser(db, user.id).at(-1);
-  assert.equal(last.reason, 'purchase');
-  assert.equal(last.amount, -40);
-  assert.equal(last.balance_after, 60);
-  assert.equal(last.shop_id, GROCER);
-  assert.equal(last.item_id, 'fizzing-pebble');
-  assert.equal(last.quantity, 2);
+  assert.equal(result.repeated, false);
+  assert.equal(await getBalance(db, user.id), 60);
+  assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 2);
+
+  const purchase = (await findPurchasesByUser(db, user.id))[0];
+  assert.equal(purchase.item_id, 'fizzing-pebble');
+  assert.equal(purchase.total_cost, 40);
+  const ledger = (await findCoinTransactionsByUser(db, user.id)).at(-1);
+  assert.equal(ledger.reason, 'purchase');
+  assert.equal(ledger.amount, -40);
+  assert.equal(ledger.purchase_id, purchase.id, 'the ledger row points at the purchase');
 });
 
-test('insufficient funds leaves balance, inventory and ledger unchanged', async () => {
+test('insufficient funds leaves everything unchanged', async () => {
   const { db, user } = await playerDb();
-  const before = snapshot(db, user.id);
-  assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'pickled-moonbeam', quantity: 2 }), /not have enough coins/);
-  assert.deepEqual(snapshot(db, user.id), before);
+  const before = await snapshot(db, user.id);
+  await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'pickled-moonbeam', quantity: 2, requestId: newRequestId() }), /not have enough coins/);
+  assert.deepEqual(await snapshot(db, user.id), before);
 });
 
 test('unknown shops and items the shop does not sell are refused', async () => {
   const { db, user } = await playerDb();
-  const before = snapshot(db, user.id);
-  assert.throws(() => purchaseItem(db, user.id, { shopId: 'black-market', itemId: 'soggy-biscuit', quantity: 1 }), /no such shop/);
-  assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'unlabelled-jar', quantity: 1 }), /does not sell that/);
-  assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'golden-nothing', quantity: 1 }), /does not sell that/);
-  assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'jubilee-crumpet', quantity: 1 }), GameRuleError);
-  assert.deepEqual(snapshot(db, user.id), before);
+  const before = await snapshot(db, user.id);
+  const buy = (shopId, itemId) => purchaseItem(db, user.id, { shopId, itemId, quantity: 1, requestId: newRequestId() });
+  await assert.rejects(buy('black-market', 'soggy-biscuit'), /no such shop/);
+  await assert.rejects(buy(GROCER, 'unlabelled-jar'), /does not sell that/);
+  await assert.rejects(buy(GROCER, 'golden-nothing'), /does not sell that/);
+  await assert.rejects(buy(GROCER, 'jubilee-crumpet'), GameRuleError);
+  assert.deepEqual(await snapshot(db, user.id), before);
 });
 
-test('quantity must be a safe whole number within the per-purchase limit', async () => {
+test('quantity and request id are validated', async () => {
   const { db, user } = await playerDb();
-  const before = snapshot(db, user.id);
-  for (const quantity of [0, -1, 1.5, '2', NaN, Infinity, MAX_PURCHASE_QUANTITY + 1, Number.MAX_SAFE_INTEGER + 1, undefined]) {
-    assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity }), GameRuleError, String(quantity));
+  const before = await snapshot(db, user.id);
+  for (const quantity of [0, -1, 1.5, '2', NaN, Infinity, MAX_PURCHASE_QUANTITY + 1, undefined]) {
+    await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity, requestId: newRequestId() }), GameRuleError, String(quantity));
   }
-  assert.deepEqual(snapshot(db, user.id), before);
+  for (const requestId of [undefined, '', 'short', 'has spaces in it here', 42]) {
+    await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1, requestId }), /out of date/, String(requestId));
+  }
+  assert.deepEqual(await snapshot(db, user.id), before);
 });
 
 test('the price always comes from the catalog', async () => {
   const { db, user } = await playerDb();
-  // Extra fields that a tampered form might send are simply not read.
-  const result = purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 3, price: 1, totalCost: 1 });
+  const result = await purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 3, requestId: newRequestId(), price: 1, totalCost: 1 });
   assert.equal(result.totalCost, 15);
-  assert.equal(getBalance(db, user.id), 85);
+  assert.equal(await getBalance(db, user.id), 85);
 });
 
-test('a full stack rolls the coins back', async () => {
+test('a repeated request id returns the first purchase instead of buying again', async () => {
   const { db, user } = await playerDb();
-  awardCoins(db, user.id, 10_000, { reason: 'reward' });
-  grantItem(db, user.id, 'soggy-biscuit', MAX_STACK_SIZE - 3); // welcome biscuits make 999
-  const before = snapshot(db, user.id);
-  assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1 }), /cannot carry more/);
-  assert.deepEqual(snapshot(db, user.id), before, 'coins were refunded by the rollback');
+  const requestId = newRequestId();
+  const first = await purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 1, requestId });
+  const again = await purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 1, requestId });
+  assert.equal(again.repeated, true);
+  assert.equal(again.purchaseId, first.purchaseId);
+  assert.equal(await getBalance(db, user.id), 80, 'charged once');
+  assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 1);
+
+  // The same id cannot be used to authorise a different purchase.
+  await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 2, requestId }), /already used for something else/);
+  await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1, requestId }), /already used for something else/);
+  assert.equal(await getBalance(db, user.id), 80);
+});
+
+test('simultaneous submissions with one request id buy once', async () => {
+  const { db, user } = await playerDb();
+  const requestId = newRequestId();
+  const buy = () => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 1, requestId });
+  const results = await Promise.all([buy(), buy(), buy()]);
+  assert.equal(results.filter((r) => !r.repeated).length, 1);
+  assert.equal(results.filter((r) => r.repeated).length, 2);
+  assert.equal(await getBalance(db, user.id), 80);
+  assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 1);
+  assert.equal((await findPurchasesByUser(db, user.id)).length, 1);
+});
+
+test('a full stack rolls the coins and the purchase record back', async () => {
+  const { db, user } = await playerDb();
+  await withTransaction(db, (tx) => awardCoins(tx, user.id, 10_000, { reason: 'reward' }));
+  await grantItem(db, user.id, 'soggy-biscuit', MAX_STACK_SIZE - 3); // welcome biscuits make 999
+  const before = await snapshot(db, user.id);
+  await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1, requestId: newRequestId() }), /cannot carry more/);
+  assert.deepEqual(await snapshot(db, user.id), before);
 });
 
 test('a failure after the coins are taken rolls everything back', async () => {
   const { db, user } = await playerDb();
-  const before = snapshot(db, user.id);
-  db.exec("CREATE TRIGGER fail_grant BEFORE INSERT ON inventory BEGIN SELECT RAISE(ABORT, 'simulated failure'); END");
-  assert.throws(() => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 1 }), /simulated failure/);
-  db.exec('DROP TRIGGER fail_grant');
-  assert.deepEqual(snapshot(db, user.id), before);
+  const before = await snapshot(db, user.id);
+  await db.query(`
+    CREATE FUNCTION fail_grant() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'simulated failure'; END $$ LANGUAGE plpgsql;
+    CREATE TRIGGER fail_grant BEFORE INSERT ON inventory FOR EACH ROW EXECUTE FUNCTION fail_grant();
+  `);
+  await assert.rejects(purchaseItem(db, user.id, { shopId: GROCER, itemId: 'fizzing-pebble', quantity: 1, requestId: newRequestId() }), /simulated failure/);
+  await db.query('DROP TRIGGER fail_grant ON inventory; DROP FUNCTION fail_grant();');
+  assert.deepEqual(await snapshot(db, user.id), before);
 });
 
-test('repeated purchases stop exactly when the coins run out', async () => {
+test('simultaneous purchases stop exactly when the coins run out', async () => {
   const { db, user } = await playerDb();
-  let successes = 0;
-  for (let i = 0; i < 30; i++) {
-    try {
-      purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1 });
-      successes++;
-    } catch (error) {
-      assert.ok(error instanceof GameRuleError);
-    }
-  }
-  assert.equal(successes, 20, '100 coins buys twenty 5-coin biscuits');
-  assert.equal(getBalance(db, user.id), 0);
-  assert.equal(countOwned(db, user.id, 'soggy-biscuit'), 23);
+  const results = await Promise.allSettled(Array.from({ length: 30 }, () =>
+    purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1, requestId: newRequestId() })));
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 20, '100 coins buys twenty 5-coin biscuits');
+  for (const r of results.filter((r) => r.status === 'rejected')) assert.ok(r.reason instanceof GameRuleError);
+  assert.equal(await getBalance(db, user.id), 0);
+  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 23);
 });

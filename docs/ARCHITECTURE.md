@@ -1,42 +1,46 @@
 # Architecture
 
-Blobgarden is a modular monolith: one Node.js process, one SQLite file, and
-a handful of folders with strict responsibilities. The aim is that a person
-can open any file and understand it without a map. This document is the map
-anyway.
+Blobgarden is a modular monolith: one Node.js process (or several identical
+ones), one PostgreSQL database, and a handful of folders with strict
+responsibilities. The aim is that a person can open any file and understand
+it without a map. This document is the map anyway.
 
 ## Technology
 
 * Node.js with ES modules and plain JavaScript.
 * Express 5 for HTTP routing.
 * EJS templates rendered on the server.
-* SQLite through `better-sqlite3`, which is synchronous. That keeps database
-  code and transactions simple: no `await`, no callbacks.
-* `express-session` for login sessions, backed by our own small SQLite store.
-* Node's built-in test runner.
+* PostgreSQL through `pg` (node-postgres), with plain parameterised SQL.
+* `express-session` for login sessions, backed by our own small PostgreSQL
+  store.
+* Node's built-in test runner, against a real PostgreSQL test database.
 
-Password hashing uses `scrypt` from Node's `crypto` module. CSRF protection is
-a short hand-written middleware. Neither needs a package.
+Password hashing uses `scrypt` from Node's `crypto` module. CSRF protection
+is a short hand-written middleware. Neither needs a package.
 
 ## Folders
 
 ```
 src/
-  server.js        starts listening; the only file that calls listen()
+  server.js        connects to the database, migrates, loads the catalog,
+                   starts the scheduler and listens; the only file that calls listen()
   app.js           builds the Express app: middleware order, routers, error pages
   config.js        settings read from environment variables
   site.js          the game's name and logo
   navigation.js    the main menu entries
-  db/              everything that talks to SQLite
-    connection.js  opens the file and runs migrations
+  scheduler.js     background housekeeping (expired sessions, old counters)
+  db/              everything that talks to PostgreSQL
+    pool.js        the connection pool and withTransaction()
     migrate.js     applies numbered .sql files once each
     migrations/    the schema, one file per change
-    sessions.js    login session storage
-    users.js       SQL for the users table
+    sessions.js    login session storage for express-session
+    users.js       SQL for users, including the coin balance
     pets.js        SQL for the pets table
     items.js       SQL for the items table (synced copy of the catalog)
     inventory.js   SQL for the inventory table
     coin-transactions.js  SQL for the coin ledger
+    shop-purchases.js     SQL for purchase records
+    request-counters.js   SQL for rate-limit counters
   game/            gameplay rules; no HTTP, no templates
     accounts.js    registration, login, welcome purse and items
     species.js     adoptable creatures (design content)
@@ -46,13 +50,13 @@ src/
     currency.js    the only place coin balances change; writes the ledger
     purchases.js   buying from a shop
     pets.js        adopting, viewing and feeding pets
-  middleware/      request helpers: CSRF, current user, login guard
+  middleware/      request helpers: CSRF, current user, login guard, flash, rate limit
   routes/          one file per area of the site
   views/           EJS templates and partials
   public/          CSS, browser JavaScript, images
+scripts/           migrate and (development only) reset the database
 test/              mirrors src/; run with npm test
 docs/              this file
-data/              the SQLite database (ignored by git)
 ```
 
 ## Layers and their rules
@@ -62,10 +66,9 @@ render a template or redirect. They never contain rules or SQL. If a route
 file is doing arithmetic on a stat, the code is in the wrong place.
 
 **Game** (`src/game`) holds every rule: validation, limits, stat changes,
-costs. Functions take the database handle plus plain values and return plain
+costs. Functions take a database handle plus plain values and return plain
 values. When a player breaks a rule they throw a `GameRuleError` with a
-message the route can show. Multi-step changes run inside
-`db.transaction(...)`.
+message the route can show.
 
 **Database** (`src/db`) holds every SQL statement, one module per table,
 each function a single parameterised query. No rules live here.
@@ -76,9 +79,79 @@ field, and the `picture` partial that shows a placeholder until artwork
 exists.
 
 **Middleware** (`src/middleware`) is small and generic: CSRF checking, loading
-the logged-in user, redirecting guests away from protected pages, and an
-in-memory rate limiter that `app.js` places in front of the login and
-registration forms.
+the logged-in user, redirecting guests away from protected pages, one-shot
+flash messages, and a rate limiter backed by the `request_counters` table.
+
+## Database access
+
+`src/db/pool.js` opens one `pg.Pool`. Every database function takes a `db`
+argument that is either:
+
+* the pool, for a single statement that stands on its own, or
+* a client checked out by `withTransaction`, for several statements that
+  must succeed or fail together.
+
+Both have the same `query(text, params)` method, so database functions do
+not care which they get. The convention in the game layer is:
+
+* **Top-level game functions** (`registerAccount`, `adoptPet`, `feedPet`,
+  `purchaseItem`, `syncItemCatalog`) take the pool and open one transaction
+  with `withTransaction(pool, async (db) => { ... })`.
+* **Helpers that must be atomic with something else** (`spendCoins`,
+  `awardCoins`, `takeItem`) take the transaction client and call
+  `assertInTransaction`, so passing the pool by mistake fails loudly instead
+  of quietly losing atomicity.
+* **Single-statement helpers** (`grantItem`, the reads) accept either.
+
+`withTransaction` runs BEGIN, the work, and COMMIT on one connection, rolls
+back if the work throws, and always releases the connection. PostgreSQL's
+default READ COMMITTED isolation is used throughout; correctness comes from
+conditional updates and row locks, described below.
+
+### How concurrent requests stay correct
+
+PostgreSQL may run many requests at once, so every rule that depends on a
+current value is enforced inside the statement that changes it:
+
+* Coins: `UPDATE users SET coins = coins - $1 WHERE id = $2 AND coins >= $1`.
+  Zero rows changed means "not enough coins". A balance can never go below
+  zero, whatever else is happening.
+* Stacks: the inventory upsert's `WHERE` clause refuses to pass 999, and
+  removal deletes only `WHERE quantity = n` or subtracts only
+  `WHERE quantity > n`.
+* Per-account rules (the pet limit, one purchase at a time) lock the
+  player's row with `SELECT ... FOR UPDATE` at the start of the transaction,
+  so that account's changes run one after the other.
+* Uniqueness (usernames, purchase request ids) is a database constraint,
+  the final guard when two requests race.
+
+The CHECK constraints on `users.coins`, `inventory.quantity` and the pet
+stats are the backstop behind all of this.
+
+### Migrations
+
+The schema lives in `src/db/migrations`. Files run once, in filename order,
+and `schema_migrations` records which have run. `runMigrations` takes a
+PostgreSQL advisory lock first, so several server processes starting at the
+same moment cannot both apply a file. To change the schema, add a new file
+such as `002-add-something.sql`; never edit an applied one. Each file runs
+in its own transaction, so a broken migration leaves nothing half-applied.
+
+### Sessions
+
+`src/db/sessions.js` implements the four methods express-session needs
+(get, set, destroy, touch) on top of the `sessions` table, with the data as
+JSONB and the expiry as TIMESTAMPTZ. The scheduler deletes expired rows.
+Because sessions are in the database, a login survives a restart and is
+shared by every server process.
+
+### Rate limiting
+
+`createRateLimiter({ scope, keyFrom, maxAttempts, windowMs })` counts
+requests in fixed windows in the `request_counters` table with a single
+upsert, so the count is exact under concurrent requests and shared across
+processes. `keyFrom` picks the counted party (the client IP by default, or
+the account). The scheduler prunes counters older than a day.
 
 ## How a request flows
 
@@ -86,16 +159,18 @@ Take a player submitting the "adopt a pet" form.
 
 1. The browser POSTs the form to `/pets/adopt`.
 2. Middleware runs in the order listed in `app.js`: static files, form body
-   parsing, the session cookie, the CSRF check, then the current-user loader
-   which reads the user id from the session and fetches the user row.
+   parsing, the session cookie (loaded from PostgreSQL), the current-user
+   loader which fetches the user row, the flash message, then the CSRF
+   check.
 3. The pets router matches the path and the login guard confirms a user is
    present.
-4. The route handler calls `adoptPet(db, userId, { name, species })` and
+4. The route handler awaits `adoptPet(pool, userId, { name, species })` and
    nothing else.
-5. That game function validates the name, checks the species exists, counts
-   the player's pets through `db/pets.js`, and rejects if they are at the
-   limit. Inside a transaction it inserts the new pet.
-6. `db/pets.js` runs the parameterised INSERT and returns the row.
+5. That game function validates the name, checks the species exists, then
+   inside one transaction locks the player's row, counts their pets through
+   `db/pets.js`, rejects if they are at the limit, and inserts the new pet.
+6. `db/pets.js` runs the parameterised INSERT with RETURNING and hands back
+   the row.
 7. On success the route redirects to the pet's page. On a rule violation it
    re-renders the form with the error message.
 
@@ -105,80 +180,55 @@ functions it uses.
 
 ## Security basics
 
-* Passwords are hashed with scrypt and a random salt. Hashing uses the
-  asynchronous `crypto.scrypt`, which runs in Node's thread pool, so a burst
-  of logins does not block the single JavaScript thread that serves every
-  other page. Because of this, `registerAccount` and `authenticate` are
-  `async`, and the hash is computed *before* the database transaction:
-  better-sqlite3 transactions must not contain an `await`.
+* Passwords are hashed with scrypt and a random salt, using the asynchronous
+  `crypto.scrypt` so a burst of logins does not block page serving. The hash
+  is computed before the database transaction opens.
 * Session cookies are `httpOnly`, `sameSite=lax`, and `secure` in production.
-  Session rows store `expires_at` as an ISO 8601 string; SQL that compares it
-  with `datetime('now')` must wrap both sides in `datetime()`, because the
-  two text formats do not sort together.
-* Login and registration are rate limited per IP address
-  (`src/middleware/rate-limit.js`). The limiter keeps its counts in memory,
-  which is appropriate for a single-process server.
-* Behind a reverse proxy, `TRUST_PROXY` sets Express's `trust proxy` option.
-  That is what lets `req.secure` (and therefore the secure cookie) and
-  `req.ip` (and therefore rate limiting) reflect the real client.
 * Every state-changing form carries a CSRF token tied to the session.
 * All SQL is parameterised. Never build SQL from strings.
-* Ownership is checked in the game layer: a pet page loads the pet by id
-  *and* owner id, so a player cannot view or act on someone else's pet by
-  guessing a number.
+* Ownership is checked in the game layer: a pet is always loaded by id *and*
+  owner, so a player cannot reach someone else's pet by guessing a number.
 * The server is authoritative. Forms submit intentions (adopt this species,
-  feed this pet); every number is computed on the server.
+  feed this pet, buy this item); every number is computed on the server.
+* Login and registration are rate limited per IP; behind a reverse proxy,
+  `TRUST_PROXY` lets `req.ip` and `req.secure` reflect the real client.
 
 ## Database
 
-The schema lives in `src/db/migrations`. Files run once, in filename order,
-and `schema_migrations` records which have run. To change the schema, add a
-new file such as `002-add-items.sql`; never edit an applied one.
+Current tables (see `src/db/migrations/001-initial.sql` for the exact
+definitions and comments):
 
-Current tables:
-
-* `users`: account, password hash, coins. The table requires coins to be
-  an integer from 0 to 1,000,000,000 (migration 004 rebuilt it with that
-  check).
-* `coin_transactions`: the coin ledger. One row per change with a signed
-  amount, the balance afterwards, a reason, and for purchases the shop,
-  item and quantity. The ledger always sums to the balance.
-* `pets`: owned by a user, with name, species and stats (0 to 100).
-* `items`: a copy of the item catalog, so inventory rows can use a foreign
-  key. Never edited by hand and never deleted from; see below.
-* `inventory`: one row per user per item type with a stack `quantity`.
-  The table itself requires the quantity to be an integer from 1 to 999
-  (migration 003 rebuilt it with that check). An emptied stack is deleted.
+* `users`: account, password hash, coins (CHECK 0 to 1,000,000,000),
+  is_admin. Usernames are unique ignoring case.
 * `sessions`: login sessions.
+* `pets`: owned by a user, with name, species and stats (CHECK 0 to 100).
+* `items`: a copy of the item catalog, so inventory rows can use a foreign
+  key. Never edited by hand and never deleted from.
+* `inventory`: one row per user per item type with a stack quantity
+  (CHECK 1 to 999). An emptied stack is deleted.
+* `shop_purchases`: completed purchases with the request id that made them.
+* `coin_transactions`: the coin ledger; always sums to the balance.
+* `request_counters`: rate-limit windows.
 * `schema_migrations`: bookkeeping.
 
 Species and shops are not tables. They are JavaScript lists in
 `src/game/species.js` and `src/game/shops.js` because they are hand-edited
 design content and nothing in the database needs to reference them by
-foreign key. (The ledger stores the shop id as plain text.)
-
-### Migrations that rebuild a table
-
-SQLite cannot add a CHECK constraint to an existing table, so migrations
-003 and 004 create a new table, copy the rows, drop the old table and
-rename. The migration runner follows SQLite's documented procedure for
-this: foreign keys are switched off while migrations run, and each
-migration runs `PRAGMA foreign_key_check` before it commits, so a mistake
-rolls back instead of leaving orphaned rows.
+foreign key. (Purchases and the ledger store the shop id as plain text.)
 
 ### The item catalog
 
 Items are also design content, so they live in JavaScript:
 `src/game/items.js` is the authoritative list. At startup `server.js`
 calls `syncItemCatalog`, which upserts every catalog entry into the `items`
-table and marks any row whose id is no longer in the catalog as `retired`.
+table and marks any row whose id is no longer in the catalog as retired.
 Nothing is deleted, so players keep retired items (shown as keepsakes) and
 foreign keys stay valid. Running the sync twice changes nothing.
 
 Item ids are permanent. Once an id has shipped it must never be given to a
 different item, because inventory rows refer to it.
 
-An item is in one of three states, and two flags on the row record them:
+An item is in one of three states:
 
 | State        | How it is set                        | Granted? | Usable? |
 |--------------|--------------------------------------|----------|---------|
@@ -186,36 +236,20 @@ An item is in one of three states, and two flags on the row record them:
 | limited-time | in the catalog, `obtainable: false`  | no       | yes     |
 | retired      | deleted from the catalog             | no       | no      |
 
-"Granted" means any code path that hands items out (`grantItem`): welcome
-gifts today, shops and rewards later. "Usable" means the item can be
-applied to a pet. Ending a limited-time item is therefore a one-word change
-in the catalog; retiring it is a deletion. Both leave player inventories
-untouched.
-
-### Stack limits
-
-`MAX_STACK_SIZE` in `src/game/inventory.js` caps how many of one item a
-player can hold. Quantities are checked with `Number.isSafeInteger`, so
-fractions, strings, and numbers too large to count exactly are refused
-before any SQL runs. The cap itself is enforced inside the upsert in
-`db/inventory.js` (the `ON CONFLICT ... WHERE` clause), so two grants
-arriving together cannot combine to exceed it, and the table's CHECK
-constraint is the final backstop. The constant and the constraint are both
-999; raising one means a migration to raise the other.
-
 ### Feeding, as an example of a transaction
 
-`feedPet` in `src/game/pets.js` runs inside one `db.transaction`:
+`feedPet` in `src/game/pets.js` runs inside one `withTransaction`:
 
 1. Look up the item in the catalog and check it is food.
 2. Load the pet by id *and* owner. Not yours means not found.
-3. Refuse if the pet is already full.
+3. Work out the new stats, capped at `STAT_MAX`. If no stat the food
+   affects would change, the pet refuses it and nothing is consumed.
 4. Take one of the item. The SQL in `db/inventory.js` removes the item only
    if the stack holds enough, in a single statement, so two requests racing
    for the last item cannot both succeed.
-5. Apply the effects, capped at `STAT_MAX`, and save the stats.
+5. Save the stats.
 
-If any step throws, SQLite rolls the whole thing back and the item is
+If any step throws, PostgreSQL rolls the whole thing back and the item is
 still in the inventory. The route then redirects (POST, redirect, GET) so a
 browser refresh never repeats the feed.
 
@@ -223,59 +257,43 @@ browser refresh never repeats the feed.
 
 `src/game/currency.js` is the only module that changes a balance.
 `spendCoins` and `awardCoins` each run one conditional UPDATE in
-`db/users.js` (subtract only if the balance covers it; add only if the
-ceiling is not exceeded) and write a ledger row. Routes never touch
-`users.coins`. Future rewards call `awardCoins` with their own reason.
+`db/users.js` and write a ledger row, inside the caller's transaction.
+Routes never touch `users.coins`. Future rewards call `awardCoins` with
+their own reason.
 
-Shops are design content in `src/game/shops.js`. Each shop lists what it
-sells and at what price; items carry no price of their own, so two shops
-can price the same thing differently. Stock is unlimited.
-
-`purchaseItem` in `src/game/purchases.js` is the second transaction
-example:
-
-1. Look up the shop, then the offer (the item at this shop's price). An
-   item that exists but is not on this shop's list is refused.
-2. Check the quantity is a safe integer from 1 to `MAX_PURCHASE_QUANTITY`.
-3. Total = catalog price times quantity. Nothing from the browser is used
-   except the item id and the quantity.
-4. Inside one transaction: `spendCoins` (fails if short), then
-   `grantItem` (fails if the stack would pass 999). The ledger row records
-   shop, item and quantity.
-
-Any failure rolls back both the coins and the items.
-
-Against double submission the shop page carries a one-time purchase token
-in the session, printed into every buy form. The buy route accepts a token
-once and discards it, so a double-click or a re-sent form gets a polite
-refusal instead of a second charge. This works because the session store
-and the purchase handler are synchronous: one request runs from session
-load to session save without another interleaving. The conditional coin
-update is the backstop if that ever changes.
+`purchaseItem` in `src/game/purchases.js` validates the shop, the offer and
+the quantity, then inside one transaction: locks the player's row, checks
+whether this form's request id was already used (and if so returns that
+purchase instead of making another), inserts the purchase record, spends
+the coins, and grants the items. The price always comes from the catalog.
+Any failure rolls back every step.
 
 ## Changing the game by hand
 
-* Tunable numbers (starting coins, pet limit, name length, starting stats)
-  are named constants at the top of the relevant `src/game` file.
+* Tunable numbers (starting coins, pet limit, name length, starting stats,
+  stack size, purchase quantity) are named constants at the top of the
+  relevant `src/game` file.
 * Adding a species means adding an object to `species.js`.
-* Adding a shop means adding an object to `src/game/shops.js`; it appears
-  in the directory at once. Changing a price means editing the number on
-  that shop's merchandise line. Both are validated at startup.
+* Adding a shop means adding an object to `src/game/shops.js`; changing a
+  price means editing the number on that shop's merchandise line.
 * Adding an item means adding an object to `src/game/items.js` and
-  restarting the server. The file's header comment lists the fields; the
-  catalog is validated at startup so a typo in a category or effect fails
-  immediately rather than when a player uses the item.
+  restarting the server. The catalog is validated at startup so a typo
+  fails immediately rather than when a player uses the item.
 * Adding a menu entry means adding an object to `navigation.js`.
 * Adding a page means: a route file (or a handler in an existing one), a
   template, and if it changes state, a game function and a database
   function. Mount the router in `app.js`.
+* Changing the schema means a new numbered file in `src/db/migrations`.
 * Artwork: put a file in `src/public/images` and set its path in the place
-  that owns it (`site.js`, `navigation.js`, `species.js`). See
-  `src/public/images/README.md`.
+  that owns it. See `src/public/images/README.md`.
 
 ## Testing
 
-`npm test` runs everything under `test/`. Game and database tests use an
-in-memory SQLite database. Route tests start the real app on a random port
-and drive it with `fetch`, keeping cookies like a browser, so login and CSRF
-are exercised for real.
+`npm test` runs everything under `test/` against the database named by
+`TEST_DATABASE_URL`. `test/helpers/test-database.js` migrates it once per
+process and truncates every table before each test. Game tests call game
+functions directly with the pool. Route tests start the real app on a
+random port and drive it with `fetch`, keeping cookies like a browser, so
+login, CSRF and rate limits are exercised for real. Concurrency tests fire
+several requests at once with `Promise.all` and assert on the database
+afterwards; nothing is mocked.

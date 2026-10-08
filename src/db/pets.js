@@ -2,33 +2,45 @@
 
 const PET_COLUMNS = 'id, user_id, name, species, hunger, happiness, health, created_at, updated_at';
 
-export function findPetsByOwner(db, userId) {
-  return db.prepare(`SELECT ${PET_COLUMNS} FROM pets WHERE user_id = ? ORDER BY created_at, id`).all(userId);
+export async function findPetsByOwner(db, userId) {
+  const { rows } = await db.query(
+    `SELECT ${PET_COLUMNS} FROM pets WHERE user_id = $1 ORDER BY created_at, id`,
+    [userId],
+  );
+  return rows;
 }
 
 // Looks a pet up by id AND owner, so a player can never reach another
 // player's pet by changing the number in the address bar.
-export function findPetForOwner(db, petId, userId) {
-  return db.prepare(`SELECT ${PET_COLUMNS} FROM pets WHERE id = ? AND user_id = ?`).get(petId, userId) || null;
+export async function findPetForOwner(db, petId, userId) {
+  const { rows } = await db.query(
+    `SELECT ${PET_COLUMNS} FROM pets WHERE id = $1 AND user_id = $2`,
+    [petId, userId],
+  );
+  return rows[0] || null;
 }
 
-export function countPetsByOwner(db, userId) {
-  return db.prepare('SELECT COUNT(*) AS count FROM pets WHERE user_id = ?').get(userId).count;
+export async function countPetsByOwner(db, userId) {
+  const { rows } = await db.query('SELECT COUNT(*) AS count FROM pets WHERE user_id = $1', [userId]);
+  return rows[0].count;
 }
 
-export function insertPet(db, { userId, name, species, hunger, happiness, health }) {
-  const result = db
-    .prepare('INSERT INTO pets (user_id, name, species, hunger, happiness, health) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(userId, name, species, hunger, happiness, health);
-  return findPetForOwner(db, result.lastInsertRowid, userId);
+export async function insertPet(db, { userId, name, species, hunger, happiness, health }) {
+  const { rows } = await db.query(
+    `INSERT INTO pets (user_id, name, species, hunger, happiness, health)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${PET_COLUMNS}`,
+    [userId, name, species, hunger, happiness, health],
+  );
+  return rows[0];
 }
 
 // Writes new stat values. Filtering by owner as well as id means the
-// update silently does nothing (changes = 0) if the pet is not theirs.
-export function updatePetStats(db, petId, userId, { hunger, happiness, health }) {
-  const result = db.prepare(`
-    UPDATE pets SET hunger = ?, happiness = ?, health = ?, updated_at = datetime('now')
-    WHERE id = ? AND user_id = ?
-  `).run(hunger, happiness, health, petId, userId);
-  return result.changes;
+// update silently does nothing (0 rows) if the pet is not theirs.
+export async function updatePetStats(db, petId, userId, { hunger, happiness, health }) {
+  const result = await db.query(
+    `UPDATE pets SET hunger = $1, happiness = $2, health = $3, updated_at = now()
+     WHERE id = $4 AND user_id = $5`,
+    [hunger, happiness, health, petId, userId],
+  );
+  return result.rowCount;
 }
