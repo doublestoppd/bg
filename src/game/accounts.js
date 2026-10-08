@@ -2,12 +2,18 @@ import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { GameRuleError } from './errors.js';
 import { findUserByUsernameWithPassword, insertUser, usernameExists } from '../db/users.js';
+import { grantItem } from './inventory.js';
 
 // ----- Tunable rules -----
 export const STARTING_COINS = 100;
 export const USERNAME_MIN_LENGTH = 3;
 export const USERNAME_MAX_LENGTH = 20;
 export const PASSWORD_MIN_LENGTH = 8;
+// A few things to feed a first pet with. Item ids come from game/items.js.
+export const WELCOME_ITEMS = [
+  { itemId: 'soggy-biscuit', quantity: 3 },
+  { itemId: 'humming-turnip', quantity: 1 },
+];
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_]+$/;
 
@@ -35,7 +41,11 @@ export async function registerAccount(db, { username, password }) {
     if (usernameExists(db, cleanUsername)) {
       throw new GameRuleError('That username is already taken.');
     }
-    return insertUser(db, { username: cleanUsername, passwordHash, coins: STARTING_COINS });
+    const user = insertUser(db, { username: cleanUsername, passwordHash, coins: STARTING_COINS });
+    for (const gift of WELCOME_ITEMS) {
+      grantItem(db, user.id, gift.itemId, gift.quantity);
+    }
+    return user;
   })();
 }
 

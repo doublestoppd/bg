@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDatabase } from '../../src/db/connection.js';
+import { openTestDatabase } from '../helpers/test-database.js';
 import { registerAccount } from '../../src/game/accounts.js';
 import { adoptPet, listPets, getPet, MAX_PETS_PER_PLAYER, STARTING_STATS } from '../../src/game/pets.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
 async function playerDb() {
-  const db = openDatabase(':memory:');
+  const db = openTestDatabase();
   const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   return { db, user };
 }

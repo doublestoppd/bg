@@ -69,6 +69,13 @@ npm test
 Tests use Node's built-in test runner and an in-memory database, so they need
 no setup and leave nothing behind.
 
+## Adding items
+
+Items are defined in `src/game/items.js`. Add an object to the list, give
+it an id that has never been used before, and restart the server; the
+database copy is updated automatically. See the comment at the top of that
+file for the fields and `docs/ARCHITECTURE.md` for how the sync works.
+
 ## Adding your own artwork
 
 See `src/public/images/README.md`. Every picture in the game falls back to a

@@ -220,6 +220,26 @@ p { margin: 0 0 10px; }
 .species-choices .picture { display: block; margin: 0 auto 6px; }
 .item-box .pet-thumb { display: block; margin: 0 auto 6px; }
 
+/* ----- Inventory ----- */
+
+.inventory-grid .item-box { text-align: center; }
+.item-box .item-icon { display: block; margin: 0 auto 6px; }
+.item-name { font-weight: bold; }
+.item-qty { color: var(--muted); font-weight: normal; }
+.item-meta { margin: 2px 0; }
+.item-action { margin-top: 6px; }
+.item-action select { width: auto; max-width: 60%; }
+.rarity-uncommon { border-color: #4e8a2a; }
+.rarity-rare { border-color: #7a3fc9; border-style: double; border-width: 3px; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 /* ----- Forms ----- */
 
 .form-row { margin-bottom: 10px; }

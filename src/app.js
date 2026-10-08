@@ -8,9 +8,11 @@ import { SqliteSessionStore } from './db/sessions.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { createRateLimiter } from './middleware/rate-limit.js';
 import { loadCurrentUser } from './middleware/current-user.js';
+import { flashMessages } from './middleware/flash.js';
 import homeRoutes from './routes/home.js';
 import authRoutes from './routes/auth.js';
 import petRoutes from './routes/pets.js';
+import inventoryRoutes from './routes/inventory.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,6 +55,7 @@ export function createApp({ db, trustProxy = config.trustProxy, secureCookies = 
     next();
   });
   app.use(loadCurrentUser);
+  app.use(flashMessages);
 
   // Must come after loadCurrentUser so that a rejected form can still
   // render the page frame with the right menu.
@@ -68,6 +71,7 @@ export function createApp({ db, trustProxy = config.trustProxy, secureCookies = 
   app.use('/', homeRoutes);
   app.use('/', authRoutes);
   app.use('/pets', petRoutes);
+  app.use('/inventory', inventoryRoutes);
 
   // --- Error pages ---
 

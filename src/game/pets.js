@@ -1,12 +1,17 @@
 import { GameRuleError } from './errors.js';
 import { findSpecies } from './species.js';
-import { countPetsByOwner, findPetForOwner, findPetsByOwner, insertPet } from '../db/pets.js';
+import { findItem } from './items.js';
+import { takeItem } from './inventory.js';
+import { countPetsByOwner, findPetForOwner, findPetsByOwner, insertPet, updatePetStats } from '../db/pets.js';
 
 // ----- Tunable rules -----
 export const MAX_PETS_PER_PLAYER = 4;
 export const PET_NAME_MIN_LENGTH = 2;
 export const PET_NAME_MAX_LENGTH = 20;
 export const STARTING_STATS = { hunger: 60, happiness: 60, health: 100 };
+export const STAT_MIN = 0;
+export const STAT_MAX = 100;
+const STAT_NAMES = ['hunger', 'happiness', 'health'];
 
 // Letters, numbers, spaces, apostrophes and hyphens. Collapsed to single
 // spaces before checking, so "Sir   Wobble" becomes "Sir Wobble".
@@ -49,4 +54,50 @@ export function getPet(db, userId, petId) {
 // Attaches the species design data (name, description, image) to a pet row.
 function withSpecies(pet) {
   return { ...pet, speciesInfo: findSpecies(pet.species) };
+}
+
+// Feeds one unit of a food item to the player's pet. The item leaves the
+// inventory and the pet's stats change inside one transaction, so a
+// failure at any step leaves both untouched.
+export function feedPet(db, userId, { petId, itemId }) {
+  const item = findItem(itemId);
+  if (!item || item.category !== 'food') {
+    throw new GameRuleError('That is not something a pet can eat.');
+  }
+
+  return db.transaction(() => {
+    const pet = findPetForOwner(db, Number(petId), userId);
+    if (!pet) {
+      throw new GameRuleError('That pet is not yours to feed.');
+    }
+    if (pet.hunger >= STAT_MAX) {
+      throw new GameRuleError(`${pet.name} is too full to eat anything.`);
+    }
+
+    takeItem(db, userId, item.id, 1); // throws if the player has none
+
+    const newStats = applyEffects(pet, item.effects);
+    const changed = updatePetStats(db, pet.id, userId, newStats);
+    if (changed !== 1) {
+      throw new Error(`Pet ${pet.id} could not be updated while feeding`);
+    }
+
+    return { pet: withSpecies({ ...pet, ...newStats }), before: pickStats(pet), item };
+  })();
+}
+
+// Adds each effect to the matching stat and keeps every stat within
+// STAT_MIN..STAT_MAX.
+function applyEffects(pet, effects) {
+  const stats = pickStats(pet);
+  for (const [stat, amount] of Object.entries(effects)) {
+    stats[stat] = Math.max(STAT_MIN, Math.min(STAT_MAX, stats[stat] + amount));
+  }
+  return stats;
+}
+
+function pickStats(pet) {
+  const stats = {};
+  for (const stat of STAT_NAMES) stats[stat] = pet[stat];
+  return stats;
 }

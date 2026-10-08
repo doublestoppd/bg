@@ -19,3 +19,6 @@
 
   <main class="site-content">
     <h1 class="page-title"><%= title %></h1>
+    <% if (locals.flash) { %>
+    <div class="notice notice-<%= flash.type %>"><p><%= flash.text %></p></div>
+    <% } %>

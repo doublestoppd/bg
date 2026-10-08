@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { openDatabase } from '../../src/db/connection.js';
+import { openTestDatabase } from '../helpers/test-database.js';
 import { registerAccount, authenticate, STARTING_COINS, hashPassword, verifyPassword } from '../../src/game/accounts.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
 test('registering creates a user with starting coins', async () => {
-  const db = openDatabase(':memory:');
+  const db = openTestDatabase();
   const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   assert.equal(user.username, 'wobble');
   assert.equal(user.coins, STARTING_COINS);
@@ -13,20 +13,20 @@ test('registering creates a user with starting coins', async () => {
 });
 
 test('usernames must be unique, ignoring case', async () => {
-  const db = openDatabase(':memory:');
+  const db = openTestDatabase();
   await registerAccount(db, { username: 'Wobble', password: 'correct horse' });
   await assert.rejects(registerAccount(db, { username: 'wobble', password: 'another one' }), GameRuleError);
 });
 
 test('bad usernames and short passwords are rejected', async () => {
-  const db = openDatabase(':memory:');
+  const db = openTestDatabase();
   await assert.rejects(registerAccount(db, { username: 'ab', password: 'long enough' }), GameRuleError);
   await assert.rejects(registerAccount(db, { username: 'has space', password: 'long enough' }), GameRuleError);
   await assert.rejects(registerAccount(db, { username: 'fine', password: 'short' }), GameRuleError);
 });
 
 test('authenticate accepts the right password and rejects the wrong one', async () => {
-  const db = openDatabase(':memory:');
+  const db = openTestDatabase();
   await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   const user = await authenticate(db, { username: 'wobble', password: 'correct horse' });
   assert.equal(user.username, 'wobble');

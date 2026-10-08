@@ -22,3 +22,13 @@ export function insertPet(db, { userId, name, species, hunger, happiness, health
     .run(userId, name, species, hunger, happiness, health);
   return findPetForOwner(db, result.lastInsertRowid, userId);
 }
+
+// Writes new stat values. Filtering by owner as well as id means the
+// update silently does nothing (changes = 0) if the pet is not theirs.
+export function updatePetStats(db, petId, userId, { hunger, happiness, health }) {
+  const result = db.prepare(`
+    UPDATE pets SET hunger = ?, happiness = ?, health = ?, updated_at = datetime('now')
+    WHERE id = ? AND user_id = ?
+  `).run(hunger, happiness, health, petId, userId);
+  return result.changes;
+}

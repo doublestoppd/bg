@@ -1,4 +1,4 @@
-import { openDatabase } from '../../src/db/connection.js';
+import { openTestDatabase } from './test-database.js';
 import { createApp } from '../../src/app.js';
 
 // Starts the real application on a random free port with an in-memory
@@ -6,7 +6,7 @@ import { createApp } from '../../src/app.js';
 // so a test can log in and then visit protected pages like a browser would.
 // appOptions are passed through to createApp (for example trustProxy).
 export function startTestServer(appOptions = {}) {
-  const db = openDatabase(':memory:');
+  const db = openTestDatabase();
   const app = createApp({ db, ...appOptions });
   const server = app.listen(0);
   const baseUrl = `http://127.0.0.1:${server.address().port}`;

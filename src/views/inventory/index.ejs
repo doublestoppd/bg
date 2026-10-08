@@ -1,0 +1,46 @@
+<%- include('../partials/header') %>
+
+<% if (error) { %>
+<div class="notice notice-error"><p><%= error %></p></div>
+<% } %>
+
+<% if (items.length === 0) { %>
+<p>Your pockets are empty. Odd things turn up around <%= site.name %> from time to time.</p>
+<% } else { %>
+<p>You are carrying <%= items.length %> kind<%= items.length === 1 ? '' : 's' %> of thing.
+<% if (pets.length === 0) { %>Food can be given to a pet once you <a href="/pets/adopt">adopt one</a>.<% } %></p>
+
+<ul class="item-grid inventory-grid">
+  <% for (const item of items) { %>
+  <li class="item-box rarity-<%= item.rarity %>">
+    <%- include('../partials/picture', { src: item.image, alt: item.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
+    <div class="item-name"><%= item.name %> <span class="item-qty">&times;<%= item.quantity %></span></div>
+    <div class="muted item-meta"><%= item.rarity %> <%= item.category %></div>
+    <div class="muted"><%= item.description %></div>
+    <% if (item.retired) { %>
+    <div class="muted item-meta">No longer found in <%= site.name %>. A keepsake.</div>
+    <% } else if (item.category === 'food') { %>
+    <div class="muted item-meta">
+      <% const effects = Object.entries(item.effects); %>
+      <% effects.forEach(([stat, amount], index) => { %><%= stat.charAt(0).toUpperCase() + stat.slice(1) %> <%= amount > 0 ? '+' : '' %><%= amount %><%= index < effects.length - 1 ? ', ' : '' %><% }) %>
+    </div>
+      <% if (pets.length > 0) { %>
+      <form method="post" action="/inventory/feed" class="item-action">
+        <%- include('../partials/csrf') %>
+        <input type="hidden" name="item" value="<%= item.item_id %>">
+        <label class="visually-hidden" for="pet-<%= item.item_id %>">Feed to</label>
+        <select name="pet" id="pet-<%= item.item_id %>">
+          <% for (const pet of pets) { %>
+          <option value="<%= pet.id %>"><%= pet.name %></option>
+          <% } %>
+        </select>
+        <button type="submit">Feed</button>
+      </form>
+      <% } %>
+    <% } %>
+  </li>
+  <% } %>
+</ul>
+<% } %>
+
+<%- include('../partials/footer') %>
