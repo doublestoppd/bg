@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openTestDatabase } from '../helpers/test-database.js';
 import { registerAccount } from '../../src/game/accounts.js';
-import { grantItem, takeItem, countOwned, listInventory } from '../../src/game/inventory.js';
+import { grantItem, takeItem, countOwned, listInventory, MAX_STACK_SIZE } from '../../src/game/inventory.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
 async function playerDb() {
@@ -65,4 +65,39 @@ test('the database itself refuses a zero or negative stack', async () => {
   const { db, user } = await playerDb();
   assert.throws(() => db.prepare('INSERT INTO inventory (user_id, item_id, quantity) VALUES (?, ?, 0)').run(user.id, 'unlabelled-jar'), /CHECK/);
   assert.throws(() => db.prepare('INSERT INTO inventory (user_id, item_id, quantity) VALUES (?, ?, 1)').run(user.id, 'imaginary-item'), /FOREIGN KEY/);
+});
+
+test('quantities must be safe whole numbers within the stack limit', async () => {
+  const { db, user } = await playerDb();
+  const bad = [1000, MAX_STACK_SIZE + 1, Number.MAX_SAFE_INTEGER + 1, Number.MAX_VALUE, Infinity, NaN, '5', 2.5, -1, 0, null, undefined];
+  for (const quantity of bad) {
+    assert.throws(() => grantItem(db, user.id, 'fizzing-pebble', quantity), GameRuleError, `grant ${String(quantity)}`);
+    assert.throws(() => takeItem(db, user.id, 'soggy-biscuit', quantity), GameRuleError, `take ${String(quantity)}`);
+  }
+  assert.equal(countOwned(db, user.id, 'fizzing-pebble'), 0);
+  assert.equal(countOwned(db, user.id, 'soggy-biscuit'), 3, 'nothing was taken');
+});
+
+test('a stack cannot grow past the limit, even across several grants', async () => {
+  const { db, user } = await playerDb();
+  grantItem(db, user.id, 'fizzing-pebble', MAX_STACK_SIZE - 1);
+  grantItem(db, user.id, 'fizzing-pebble', 1);
+  assert.equal(countOwned(db, user.id, 'fizzing-pebble'), MAX_STACK_SIZE);
+  assert.throws(() => grantItem(db, user.id, 'fizzing-pebble', 1), /cannot carry more than/);
+  assert.equal(countOwned(db, user.id, 'fizzing-pebble'), MAX_STACK_SIZE, 'the refused grant changed nothing');
+  takeItem(db, user.id, 'fizzing-pebble', 1);
+  grantItem(db, user.id, 'fizzing-pebble', 1);
+  assert.equal(countOwned(db, user.id, 'fizzing-pebble'), MAX_STACK_SIZE);
+});
+
+test('the database rejects out-of-range or non-integer quantities directly', async () => {
+  const { db, user } = await playerDb();
+  const insert = db.prepare('INSERT INTO inventory (user_id, item_id, quantity) VALUES (?, ?, ?)');
+  assert.throws(() => insert.run(user.id, 'unlabelled-jar', MAX_STACK_SIZE + 1), /CHECK/);
+  assert.throws(() => insert.run(user.id, 'unlabelled-jar', 2.5), /CHECK/);
+  assert.throws(() => insert.run(user.id, 'unlabelled-jar', 'lots'), /CHECK/);
+  assert.throws(() => insert.run(user.id, 'unlabelled-jar', 0), /CHECK/);
+  insert.run(user.id, 'unlabelled-jar', MAX_STACK_SIZE);
+  assert.throws(() => db.prepare('UPDATE inventory SET quantity = quantity + 1 WHERE item_id = ?').run('unlabelled-jar'), /CHECK/);
+  assert.equal(countOwned(db, user.id, 'unlabelled-jar'), MAX_STACK_SIZE);
 });

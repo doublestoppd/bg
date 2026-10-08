@@ -120,3 +120,20 @@ test('two simultaneous submissions for the last item feed the pet only once', as
     server.close();
   }
 });
+
+test('a limited-time item shows as no longer obtainable but still has a feed form', async () => {
+  const server = startTestServer();
+  try {
+    await registerAndLogIn(server, 'wobble');
+    await adopt(server, 'Pebbles');
+    const user = server.db.prepare('SELECT id FROM users WHERE username = ?').get('wobble');
+    server.db.prepare('INSERT INTO inventory (user_id, item_id, quantity) VALUES (?, ?, 1)').run(user.id, 'jubilee-crumpet');
+
+    const page = await server.request('/inventory');
+    assert.match(page.text, /Jubilee Crumpet/);
+    assert.match(page.text, /no longer obtainable/);
+    assert.match(page.text, /name="item" value="jubilee-crumpet"/, 'still usable');
+  } finally {
+    server.close();
+  }
+});

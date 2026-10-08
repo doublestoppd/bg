@@ -13,10 +13,18 @@ import { upsertItem, retireItemsNotIn } from '../db/items.js';
 //   * effects lists what happens to a pet when the item is used on it.
 //     Only food is usable at the moment; each key is a pet stat and the
 //     value is added to it (stats are capped, see game/pets.js).
+//   * obtainable (optional, default true) says whether the item may still
+//     be handed out. Set it to false to end a limited-time item: nothing
+//     can grant it any more, but players who own one can still use it.
 //
-// To remove an item from the game, delete it from this list. The database
-// row is marked retired, players keep what they own, and the id must not
-// be given to a new item.
+// An item therefore has three possible states:
+//   obtainable      in the catalog, obtainable: true   can be granted and used
+//   limited-time    in the catalog, obtainable: false  can be used, not granted
+//   retired         deleted from this list              can only be kept
+//
+// To retire an item, delete it from this list. The database row is marked
+// retired, players keep what they own, and the id must not be given to a
+// new item.
 
 export const CATEGORIES = ['food', 'curiosity'];
 export const RARITIES = ['common', 'uncommon', 'rare'];
@@ -60,6 +68,16 @@ const items = [
     effects: { hunger: 40, happiness: 15, health: 10 },
   },
   {
+    id: 'jubilee-crumpet',
+    name: 'Jubilee Crumpet',
+    description: 'Baked for the opening of Blobgarden and handed out at the gate. No more are being made.',
+    category: 'food',
+    rarity: 'rare',
+    image: null,
+    effects: { hunger: 30, happiness: 30 },
+    obtainable: false,
+  },
+  {
     id: 'unlabelled-jar',
     name: 'Unlabelled Jar',
     description: 'A jar. Something inside is tapping. Best not opened yet.',
@@ -71,6 +89,9 @@ const items = [
 ];
 
 validateCatalog(items);
+for (const item of items) {
+  if (item.obtainable === undefined) item.obtainable = true;
+}
 
 export function allItems() {
   return items;
@@ -104,6 +125,9 @@ function validateCatalog(list) {
     if (!item.name || !item.description) throw new Error(`Item "${item.id}" needs a name and description`);
     if (!CATEGORIES.includes(item.category)) throw new Error(`Item "${item.id}" has unknown category "${item.category}"`);
     if (!RARITIES.includes(item.rarity)) throw new Error(`Item "${item.id}" has unknown rarity "${item.rarity}"`);
+    if (item.obtainable !== undefined && typeof item.obtainable !== 'boolean') {
+      throw new Error(`Item "${item.id}" obtainable must be true or false`);
+    }
     for (const [stat, amount] of Object.entries(item.effects || {})) {
       if (!EFFECT_STATS.includes(stat)) throw new Error(`Item "${item.id}" affects unknown stat "${stat}"`);
       if (!Number.isInteger(amount)) throw new Error(`Item "${item.id}" effect "${stat}" must be a whole number`);

@@ -1,9 +1,9 @@
 // All SQL for the items table (the synchronised copy of the catalog).
 
-export function upsertItem(db, { id, name, description, category, rarity, image, effects }) {
+export function upsertItem(db, { id, name, description, category, rarity, image, effects, obtainable }) {
   db.prepare(`
-    INSERT INTO items (id, name, description, category, rarity, image, effects, retired)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    INSERT INTO items (id, name, description, category, rarity, image, effects, obtainable, retired)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       description = excluded.description,
@@ -11,8 +11,9 @@ export function upsertItem(db, { id, name, description, category, rarity, image,
       rarity = excluded.rarity,
       image = excluded.image,
       effects = excluded.effects,
+      obtainable = excluded.obtainable,
       retired = 0
-  `).run(id, name, description, category, rarity, image, effects);
+  `).run(id, name, description, category, rarity, image, effects, obtainable ? 1 : 0);
 }
 
 // Marks every item not in the given list as retired. Nothing is deleted.

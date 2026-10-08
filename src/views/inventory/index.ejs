@@ -15,7 +15,7 @@
   <li class="item-box rarity-<%= item.rarity %>">
     <%- include('../partials/picture', { src: item.image, alt: item.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
     <div class="item-name"><%= item.name %> <span class="item-qty">&times;<%= item.quantity %></span></div>
-    <div class="muted item-meta"><%= item.rarity %> <%= item.category %></div>
+    <div class="muted item-meta"><%= item.rarity %> <%= item.category %><% if (!item.retired && !item.obtainable) { %> &middot; no longer obtainable<% } %></div>
     <div class="muted"><%= item.description %></div>
     <% if (item.retired) { %>
     <div class="muted item-meta">No longer found in <%= site.name %>. A keepsake.</div>

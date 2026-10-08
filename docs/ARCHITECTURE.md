@@ -137,8 +137,9 @@ Current tables:
 * `pets`: owned by a user, with name, species and stats (0 to 100).
 * `items`: a copy of the item catalog, so inventory rows can use a foreign
   key. Never edited by hand and never deleted from; see below.
-* `inventory`: one row per user per item type with a stack `quantity` that
-  the table itself requires to be positive. An emptied stack is deleted.
+* `inventory`: one row per user per item type with a stack `quantity`.
+  The table itself requires the quantity to be an integer from 1 to 999
+  (migration 003 rebuilt it with that check). An emptied stack is deleted.
 * `sessions`: login sessions.
 * `schema_migrations`: bookkeeping.
 
@@ -156,6 +157,31 @@ foreign keys stay valid. Running the sync twice changes nothing.
 
 Item ids are permanent. Once an id has shipped it must never be given to a
 different item, because inventory rows refer to it.
+
+An item is in one of three states, and two flags on the row record them:
+
+| State        | How it is set                        | Granted? | Usable? |
+|--------------|--------------------------------------|----------|---------|
+| obtainable   | in the catalog, `obtainable: true`   | yes      | yes     |
+| limited-time | in the catalog, `obtainable: false`  | no       | yes     |
+| retired      | deleted from the catalog             | no       | no      |
+
+"Granted" means any code path that hands items out (`grantItem`): welcome
+gifts today, shops and rewards later. "Usable" means the item can be
+applied to a pet. Ending a limited-time item is therefore a one-word change
+in the catalog; retiring it is a deletion. Both leave player inventories
+untouched.
+
+### Stack limits
+
+`MAX_STACK_SIZE` in `src/game/inventory.js` caps how many of one item a
+player can hold. Quantities are checked with `Number.isSafeInteger`, so
+fractions, strings, and numbers too large to count exactly are refused
+before any SQL runs. The cap itself is enforced inside the upsert in
+`db/inventory.js` (the `ON CONFLICT ... WHERE` clause), so two grants
+arriving together cannot combine to exceed it, and the table's CHECK
+constraint is the final backstop. The constant and the constraint are both
+999; raising one means a migration to raise the other.
 
 ### Feeding, as an example of a transaction
 

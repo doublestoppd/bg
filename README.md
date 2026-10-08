@@ -76,6 +76,10 @@ it an id that has never been used before, and restart the server; the
 database copy is updated automatically. See the comment at the top of that
 file for the fields and `docs/ARCHITECTURE.md` for how the sync works.
 
+To stop handing out a limited-time item, set `obtainable: false` on it.
+Players who already own one can still use it. To remove an item from the
+game entirely, delete its entry; owners keep it as a keepsake.
+
 ## Adding your own artwork
 
 See `src/public/images/README.md`. Every picture in the game falls back to a

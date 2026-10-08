@@ -61,7 +61,10 @@ function withSpecies(pet) {
 // failure at any step leaves both untouched.
 export function feedPet(db, userId, { petId, itemId }) {
   const item = findItem(itemId);
-  if (!item || item.category !== 'food') {
+  if (!item) {
+    throw new GameRuleError('That item is no longer part of the game and cannot be used.');
+  }
+  if (item.category !== 'food') {
     throw new GameRuleError('That is not something a pet can eat.');
   }
 

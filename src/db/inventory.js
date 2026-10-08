@@ -6,7 +6,7 @@ export function findInventoryByOwner(db, userId) {
   return db.prepare(`
     SELECT inventory.item_id, inventory.quantity,
            items.name, items.description, items.category, items.rarity,
-           items.image, items.effects, items.retired
+           items.image, items.effects, items.retired, items.obtainable
     FROM inventory
     JOIN items ON items.id = inventory.item_id
     WHERE inventory.user_id = ?
@@ -19,11 +19,16 @@ export function findStack(db, userId, itemId) {
 }
 
 // Adds to a stack, creating it if the player has none of that item.
-export function addToStack(db, userId, itemId, quantity) {
-  db.prepare(`
+// Returns false, changing nothing, if the stack would grow past maxStack.
+// The limit is checked inside the statement so concurrent grants cannot
+// combine to exceed it.
+export function addToStack(db, userId, itemId, quantity, maxStack) {
+  const result = db.prepare(`
     INSERT INTO inventory (user_id, item_id, quantity) VALUES (?, ?, ?)
     ON CONFLICT(user_id, item_id) DO UPDATE SET quantity = quantity + excluded.quantity
-  `).run(userId, itemId, quantity);
+      WHERE quantity + excluded.quantity <= ?
+  `).run(userId, itemId, quantity, maxStack);
+  return result.changes === 1;
 }
 
 // Takes from a stack only if it holds enough. Returns true when it did.
