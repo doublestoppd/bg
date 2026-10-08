@@ -20,6 +20,7 @@ const forPlayers = [
   { label: 'My Pets', href: '/pets' },
   { label: 'Adopt a Pet', href: '/pets/adopt' },
   { label: 'Inventory', href: '/inventory' },
+  { label: 'Shops', href: '/shops' },
   { label: 'Log Out', href: '/logout', method: 'post' },
 ];
 

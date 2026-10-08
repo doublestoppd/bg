@@ -19,3 +19,19 @@ export function insertUser(db, { username, passwordHash, coins }) {
     .run(username, passwordHash, coins);
   return findUserById(db, result.lastInsertRowid);
 }
+
+export function findCoins(db, userId) {
+  const row = db.prepare('SELECT coins FROM users WHERE id = ?').get(userId);
+  return row ? row.coins : null;
+}
+
+// Subtracts only if the balance covers it. Returns the number of rows
+// changed: 1 on success, 0 if the player could not afford it.
+export function subtractCoins(db, userId, amount) {
+  return db.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?').run(amount, userId, amount).changes;
+}
+
+// Adds only if the result stays within maxCoins. Returns rows changed.
+export function addCoins(db, userId, amount, maxCoins) {
+  return db.prepare('UPDATE users SET coins = coins + ? WHERE id = ? AND coins + ? <= ?').run(amount, userId, amount, maxCoins).changes;
+}

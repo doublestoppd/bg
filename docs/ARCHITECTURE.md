@@ -36,11 +36,15 @@ src/
     pets.js        SQL for the pets table
     items.js       SQL for the items table (synced copy of the catalog)
     inventory.js   SQL for the inventory table
+    coin-transactions.js  SQL for the coin ledger
   game/            gameplay rules; no HTTP, no templates
-    accounts.js    registration, login, welcome items
+    accounts.js    registration, login, welcome purse and items
     species.js     adoptable creatures (design content)
     items.js       the item catalog (design content) and its sync
+    shops.js       the shop catalog with per-shop prices (design content)
     inventory.js   granting and taking items
+    currency.js    the only place coin balances change; writes the ledger
+    purchases.js   buying from a shop
     pets.js        adopting, viewing and feeding pets
   middleware/      request helpers: CSRF, current user, login guard
   routes/          one file per area of the site
@@ -133,7 +137,12 @@ new file such as `002-add-items.sql`; never edit an applied one.
 
 Current tables:
 
-* `users`: account, password hash, coins.
+* `users`: account, password hash, coins. The table requires coins to be
+  an integer from 0 to 1,000,000,000 (migration 004 rebuilt it with that
+  check).
+* `coin_transactions`: the coin ledger. One row per change with a signed
+  amount, the balance afterwards, a reason, and for purchases the shop,
+  item and quantity. The ledger always sums to the balance.
 * `pets`: owned by a user, with name, species and stats (0 to 100).
 * `items`: a copy of the item catalog, so inventory rows can use a foreign
   key. Never edited by hand and never deleted from; see below.
@@ -143,8 +152,19 @@ Current tables:
 * `sessions`: login sessions.
 * `schema_migrations`: bookkeeping.
 
-Species are not a table. They are a JavaScript list in `src/game/species.js`
-because they are hand-edited design content.
+Species and shops are not tables. They are JavaScript lists in
+`src/game/species.js` and `src/game/shops.js` because they are hand-edited
+design content and nothing in the database needs to reference them by
+foreign key. (The ledger stores the shop id as plain text.)
+
+### Migrations that rebuild a table
+
+SQLite cannot add a CHECK constraint to an existing table, so migrations
+003 and 004 create a new table, copy the rows, drop the old table and
+rename. The migration runner follows SQLite's documented procedure for
+this: foreign keys are switched off while migrations run, and each
+migration runs `PRAGMA foreign_key_check` before it commits, so a mistake
+rolls back instead of leaving orphaned rows.
 
 ### The item catalog
 
@@ -199,11 +219,48 @@ If any step throws, SQLite rolls the whole thing back and the item is
 still in the inventory. The route then redirects (POST, redirect, GET) so a
 browser refresh never repeats the feed.
 
+### Coins and shops
+
+`src/game/currency.js` is the only module that changes a balance.
+`spendCoins` and `awardCoins` each run one conditional UPDATE in
+`db/users.js` (subtract only if the balance covers it; add only if the
+ceiling is not exceeded) and write a ledger row. Routes never touch
+`users.coins`. Future rewards call `awardCoins` with their own reason.
+
+Shops are design content in `src/game/shops.js`. Each shop lists what it
+sells and at what price; items carry no price of their own, so two shops
+can price the same thing differently. Stock is unlimited.
+
+`purchaseItem` in `src/game/purchases.js` is the second transaction
+example:
+
+1. Look up the shop, then the offer (the item at this shop's price). An
+   item that exists but is not on this shop's list is refused.
+2. Check the quantity is a safe integer from 1 to `MAX_PURCHASE_QUANTITY`.
+3. Total = catalog price times quantity. Nothing from the browser is used
+   except the item id and the quantity.
+4. Inside one transaction: `spendCoins` (fails if short), then
+   `grantItem` (fails if the stack would pass 999). The ledger row records
+   shop, item and quantity.
+
+Any failure rolls back both the coins and the items.
+
+Against double submission the shop page carries a one-time purchase token
+in the session, printed into every buy form. The buy route accepts a token
+once and discards it, so a double-click or a re-sent form gets a polite
+refusal instead of a second charge. This works because the session store
+and the purchase handler are synchronous: one request runs from session
+load to session save without another interleaving. The conditional coin
+update is the backstop if that ever changes.
+
 ## Changing the game by hand
 
 * Tunable numbers (starting coins, pet limit, name length, starting stats)
   are named constants at the top of the relevant `src/game` file.
 * Adding a species means adding an object to `species.js`.
+* Adding a shop means adding an object to `src/game/shops.js`; it appears
+  in the directory at once. Changing a price means editing the number on
+  that shop's merchandise line. Both are validated at startup.
 * Adding an item means adding an object to `src/game/items.js` and
   restarting the server. The file's header comment lists the fields; the
   catalog is validated at startup so a typo in a category or effect fails

@@ -80,6 +80,16 @@ To stop handing out a limited-time item, set `obtainable: false` on it.
 Players who already own one can still use it. To remove an item from the
 game entirely, delete its entry; owners keep it as a keepsake.
 
+## Adding a shop or changing a price
+
+Shops live in `src/game/shops.js`. Each one lists the items it sells with
+a price per item, so prices belong to the shop, not the item. To change a
+price, edit the number next to the item and restart the server. To add a
+shop, append an object with a new id, a name, a description, a keeper's
+greeting, an image path (or null), and a merchandise list; it appears on
+the Shops page immediately. The server refuses to start if a shop sells an
+item that does not exist or is no longer obtainable.
+
 ## Adding your own artwork
 
 See `src/public/images/README.md`. Every picture in the game falls back to a

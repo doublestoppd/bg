@@ -1,6 +1,9 @@
 <%# Main menu. Entries come from src/navigation.js. %>
 <nav class="site-nav" aria-label="Main menu">
   <h2 class="site-nav-heading">Navigation</h2>
+  <% if (currentUser) { %>
+  <div class="purse">Coins: <strong><%= currentUser.coins %></strong></div>
+  <% } %>
   <ul>
     <% for (const item of navigation) { %>
     <li>

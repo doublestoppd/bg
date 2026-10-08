@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { GameRuleError } from './errors.js';
 import { findUserByUsernameWithPassword, insertUser, usernameExists } from '../db/users.js';
 import { grantItem } from './inventory.js';
+import { awardCoins } from './currency.js';
 
 // ----- Tunable rules -----
 export const STARTING_COINS = 100;
@@ -41,7 +42,9 @@ export async function registerAccount(db, { username, password }) {
     if (usernameExists(db, cleanUsername)) {
       throw new GameRuleError('That username is already taken.');
     }
-    const user = insertUser(db, { username: cleanUsername, passwordHash, coins: STARTING_COINS });
+    const user = insertUser(db, { username: cleanUsername, passwordHash, coins: 0 });
+    // The starting purse goes through the ledger like every other change.
+    user.coins = awardCoins(db, user.id, STARTING_COINS, { reason: 'welcome' });
     for (const gift of WELCOME_ITEMS) {
       grantItem(db, user.id, gift.itemId, gift.quantity);
     }

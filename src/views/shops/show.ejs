@@ -1,0 +1,37 @@
+<%- include('../partials/header') %>
+
+<% if (error) { %>
+<div class="notice notice-error"><p><%= error %></p></div>
+<% } %>
+
+<div class="illustration-box">
+  <%- include('../partials/picture', { src: shop.image, alt: shop.name, cssClass: 'shop-portrait', width: 200, height: 160 }) %>
+  <div class="shop-keeper">&ldquo;<%= shop.keeper %>&rdquo;</div>
+</div>
+
+<p><%= shop.description %></p>
+<p>You have <strong><%= currentUser.coins %></strong> coins.</p>
+
+<ul class="item-grid">
+  <% for (const offer of merchandise) { %>
+  <li class="item-box rarity-<%= offer.item.rarity %>">
+    <%- include('../partials/picture', { src: offer.item.image, alt: offer.item.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
+    <div class="item-name"><%= offer.item.name %></div>
+    <div class="muted item-meta"><%= offer.item.rarity %> <%= offer.item.category %></div>
+    <div class="muted"><%= offer.item.description %></div>
+    <div class="price"><%= offer.price %> coins each</div>
+    <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
+      <%- include('../partials/csrf') %>
+      <input type="hidden" name="purchase_token" value="<%= purchaseToken %>">
+      <input type="hidden" name="item" value="<%= offer.item.id %>">
+      <label class="visually-hidden" for="qty-<%= offer.item.id %>">Quantity</label>
+      <input type="number" id="qty-<%= offer.item.id %>" name="quantity" value="1" min="1" max="<%= maxQuantity %>" required>
+      <button type="submit">Buy</button>
+    </form>
+  </li>
+  <% } %>
+</ul>
+
+<p><a href="/shops">Back to all shops</a> &middot; <a href="/inventory">Your inventory</a></p>
+
+<%- include('../partials/footer') %>

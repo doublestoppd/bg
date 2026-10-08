@@ -13,6 +13,7 @@ import homeRoutes from './routes/home.js';
 import authRoutes from './routes/auth.js';
 import petRoutes from './routes/pets.js';
 import inventoryRoutes from './routes/inventory.js';
+import shopRoutes from './routes/shops.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -72,6 +73,7 @@ export function createApp({ db, trustProxy = config.trustProxy, secureCookies = 
   app.use('/', authRoutes);
   app.use('/pets', petRoutes);
   app.use('/inventory', inventoryRoutes);
+  app.use('/shops', shopRoutes);
 
   // --- Error pages ---
 

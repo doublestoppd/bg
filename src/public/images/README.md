@@ -10,6 +10,7 @@ box instead, so the layout can be designed before the art exists.
 | Navigation buttons   | `image` on an entry in `src/navigation.js`    | `nav/pets.png`          |
 | Species portraits    | `image` on a species in `src/game/species.js` | `species/<slug>.png`    |
 | Item icons           | `image` on an item in `src/game/items.js`     | `items/<id>.png`        |
+| Shopkeepers          | `image` on a shop in `src/game/shops.js`      | `shops/<id>.png`        |
 
 Paths are URL paths, so a file at `src/public/images/logo.png` is referenced
 as `/images/logo.png`.

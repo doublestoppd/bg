@@ -195,6 +195,8 @@ p { margin: 0 0 10px; }
 }
 
 .picture-placeholder.hero { width: 100%; min-height: 160px; }
+a .picture-placeholder { text-decoration: none; color: var(--muted); }
+a:has(> .picture-placeholder) { text-decoration: none; }
 
 .item-grid {
   list-style: none;
@@ -219,6 +221,25 @@ p { margin: 0 0 10px; }
 .species-choices label { display: block; cursor: pointer; }
 .species-choices .picture { display: block; margin: 0 auto 6px; }
 .item-box .pet-thumb { display: block; margin: 0 auto 6px; }
+
+/* ----- Purse (coin balance in the menu) ----- */
+
+.purse {
+  grid-column: 1 / -1;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  background: var(--content-bg);
+  border: 1px solid var(--menu-border);
+  text-align: center;
+  font-size: 12px;
+}
+
+/* ----- Shops ----- */
+
+.shop-keeper { font-style: italic; margin-top: 6px; }
+.price { font-weight: bold; color: #7a4a00; }
+.buy-form { margin-top: 6px; }
+.buy-form input[type="number"] { width: 52px; padding: 3px; font: inherit; border: 1px solid var(--content-border); }
 
 /* ----- Inventory ----- */
 
@@ -318,6 +339,7 @@ button, .button {
 
   .site-nav ul { display: block; }
   .site-nav li { margin-bottom: 6px; }
+  .purse { text-align: left; }
 
   .site-nav li a,
   .site-nav li button {
