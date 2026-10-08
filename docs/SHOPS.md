@@ -388,3 +388,68 @@ The restock planner takes a `random` object with one method,
 `test/game/restocking.test.js` pass fixed or seeded generators from
 `test/helpers/fixed-random.js`, so they check exact outcomes rather than
 statistics and never fail by chance.
+
+## Load testing
+
+`npm run load-test` (see the README for how to run it) exercises the
+whole thing against a running server. Results from the development
+machine (one Node process, PostgreSQL 16 on the same host, 8 October 2026):
+
+| Players | Duration | Shop page p50 / p95 | Buy p50 / p95 | Purchases ok / refused | Rush for one copy | Server errors |
+|---|---|---|---|---|---|---|
+| 30 | 20 s + rush | 13 ms / 148 ms | 14 ms / 125 ms | 179 / 36 | 30 buyers, 141 ms, 1 winner | 0 |
+| 100 | 30 s + rush | 12 ms / 377 ms | 13 ms / 336 ms | 906 / 139 | 100 buyers, 356 ms, 1 winner | 0 |
+
+In both runs every refusal was "sold out" (players were given 5,000
+coins, so nobody ran short), restocks replaced the shelves every five
+seconds while people were buying, three players reloading eight times a
+second were rate limited after their allowance (68 and 63 refused reloads),
+and afterwards stock sold equalled purchases recorded for every listing,
+every ledger summed to its balance, every inventory matched its purchases,
+and no request id was used twice.
+
+### What this does and does not show
+
+* It shows the transaction design holds under real overlapping requests:
+  no double sale, no negative stock or coins, no lost or duplicated
+  purchase, including while restocks replace listings mid-purchase.
+* It shows one small process handles a hundred simultaneous shoppers with
+  the slowest responses under half a second. The p95 rise from 30 to 100
+  players is the Node process serialising page renders and the database
+  serialising purchases of the same listing; neither is a problem at this
+  scale.
+* It does not show a capacity figure. The test ran on one machine with
+  the database local, a Node process doing both the load generation and
+  the serving, and no network latency. It says nothing about thousands of
+  players or about a database on another host. Measure again in the real
+  deployment before promising numbers.
+* Logins are the slowest requests (p95 1.2 s at 100 at once) because
+  scrypt is deliberately slow. That is per login, not per page, and it is
+  the intended cost.
+
+## Known limitations
+
+* **One scheduler tick is global.** Restocks are checked every 30 seconds,
+  so a shop can be due for up to 30 seconds before it is filled. Lower
+  `RESTOCK_CHECK_INTERVAL_MS` if that matters; each check is one small
+  query per shop.
+* **Rate limits use fixed windows.** A player can make the allowance
+  twice in two adjacent seconds across a window boundary. The limits are
+  generous enough that this does not matter for people, and the purchase
+  transaction has its own per-account limits that do not depend on
+  windows.
+* **No human verification.** Nothing distinguishes a fast person from a
+  script except the limits and the log. A targeted challenge for accounts
+  the log flags is the planned next step, not a general CAPTCHA.
+* **Eligibility is thin.** Account age and owning a pet are the only
+  rules available until email verification and progression exist.
+* **Addresses are a weak signal.** The per-IP limits are generous on
+  purpose and nothing is decided from an address alone, which also means
+  many accounts behind one address are limited only per account.
+* **The admin utility is a shell command.** Anyone with the server's
+  database credentials can run it. That is appropriate while one person
+  runs the game; a web interface with its own authorisation (the
+  `users.is_admin` column is ready for it) should come before a second
+  administrator does.
+* **Restocks never catch up.** After downtime a shop restocks once, by
+  design. If the game is down for a day, the day's supply is simply lost.

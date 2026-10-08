@@ -91,6 +91,23 @@ refuses if the two URLs match). Test files run one at a time because they
 share the database; tests that check concurrency open several connections
 inside one test.
 
+## Load testing
+
+```
+TRUST_PROXY=1 PORT=3999 npm start          # in one terminal
+npm run load-test -- --url http://localhost:3999 --players 30 --seconds 20
+```
+
+The script creates throwaway players in the development database, has
+them browse and buy while restocks replace the shelves, stages a rush for
+a single scarce copy, hammers the page past the rate limit, then checks
+that stock, ledgers, inventories and request ids all agree. It prints
+request counts, latencies and the result. `TRUST_PROXY=1` is needed
+because each simulated player sends its own forwarded address, as real
+players would have their own. Never run it against production: it
+creates accounts and forces restocks. `docs/SHOPS.md` has measured
+results and what they do and do not show.
+
 ## Resetting the development database
 
 ```
@@ -160,4 +177,5 @@ whenever it is ready.
 ## Project layout
 
 See `docs/ARCHITECTURE.md` for how the code is organised and how a request
-travels through it.
+travels through it, `docs/ECONOMY.md` for coins, prices and scarcity, and
+`docs/SHOPS.md` for shops, restocks, purchasing and operations.

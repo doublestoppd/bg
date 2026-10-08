@@ -11,7 +11,8 @@
     "db:migrate": "node --env-file-if-exists=.env scripts/migrate.js",
     "db:reset": "node --env-file-if-exists=.env scripts/db-reset.js",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.js\"",
-    "shop-admin": "node --env-file-if-exists=.env scripts/shop-admin.js"
+    "shop-admin": "node --env-file-if-exists=.env scripts/shop-admin.js",
+    "load-test": "node --env-file-if-exists=.env scripts/load-test.js"
   },
   "engines": {
     "node": ">=22"

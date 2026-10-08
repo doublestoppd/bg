@@ -332,3 +332,33 @@ random port and drive it with `fetch`, keeping cookies like a browser, so
 login, CSRF and rate limits are exercised for real. Concurrency tests fire
 several requests at once with `Promise.all` and assert on the database
 afterwards; nothing is mocked.
+
+## Performance and security notes
+
+What the current design does well, and where its edges are:
+
+* **Correctness under concurrency** rests on PostgreSQL, not on Node:
+  conditional updates, row locks in a fixed order, unique constraints and
+  CHECK constraints. The load test (`docs/SHOPS.md`) confirms it with
+  real overlapping requests. Nothing is coordinated in process memory, so
+  several identical Node processes against one database are safe.
+* **The single process is the ceiling for page rendering.** EJS rendering
+  and scrypt both run on the JavaScript thread (scrypt in the thread
+  pool). The load test shows one process comfortably serving a hundred
+  active shoppers; past that, run more processes behind the proxy and set
+  `SCHEDULER_ENABLED=false` on all but one.
+* **Every query is parameterised**, every form is CSRF-protected, every
+  state change is server-side, and the browser never supplies a price, a
+  quantity limit, an item or a stock level that is trusted. The shown
+  price is compared, never used.
+* **Sessions and limits are durable** in PostgreSQL, so a restart logs
+  nobody out and resets no limit. The cost is one small query per request
+  for the session and one per limited request for the counter.
+* **Secrets** come only from the environment. The server refuses to start
+  in production with the default session secret and refuses to run
+  without a database URL.
+* **Not done yet:** HTTPS termination (use a reverse proxy and set
+  `TRUST_PROXY`), database connection TLS configuration (pass it in the
+  connection string when the database is remote; certificate verification
+  is never disabled), log shipping, and backups, which are the
+  operator's job outside this codebase.
