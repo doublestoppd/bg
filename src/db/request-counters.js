@@ -17,3 +17,12 @@ export async function deleteCountersBefore(db, time) {
   const result = await db.query('DELETE FROM request_counters WHERE window_start < $1', [time]);
   return result.rowCount;
 }
+
+// The current count without adding to it (0 if there is no row).
+export async function readCounter(db, scope, key, windowStart) {
+  const { rows } = await db.query(
+    'SELECT count FROM request_counters WHERE scope = $1 AND key = $2 AND window_start = $3',
+    [scope, key, windowStart],
+  );
+  return rows.length ? rows[0].count : 0;
+}

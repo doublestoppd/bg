@@ -1,6 +1,7 @@
 import { deleteExpiredSessions } from './db/sessions.js';
 import { deleteCountersBefore } from './db/request-counters.js';
 import { restockDueShops } from './game/restocking.js';
+import { pruneActivityLog } from './game/activity.js';
 
 // Background jobs that run inside the web server process. Each job is a
 // plain async function; a failing job is logged and tried again next time.
@@ -21,6 +22,7 @@ export function startScheduler(pool, { restockIntervalMs = 30 * 1000, housekeepi
   const housekeepingJobs = [
     { name: 'expire sessions', run: () => deleteExpiredSessions(pool) },
     { name: 'prune request counters', run: () => deleteCountersBefore(pool, new Date(Date.now() - ONE_DAY_MS)) },
+    { name: 'prune shop activity log', run: () => pruneActivityLog(pool) },
   ];
 
   let restocking = false; // never overlap two restock checks in one process

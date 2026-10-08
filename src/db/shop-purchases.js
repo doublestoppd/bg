@@ -35,3 +35,12 @@ export async function sumPurchasedFromListing(db, userId, stockId) {
   );
   return rows[0].total;
 }
+
+// Successful limited-stock purchases by an account since a point in time.
+export async function countListingPurchasesSince(db, userId, since) {
+  const { rows } = await db.query(
+    'SELECT COUNT(*)::int AS n FROM shop_purchases WHERE user_id = $1 AND stock_id IS NOT NULL AND created_at >= $2',
+    [userId, since],
+  );
+  return rows[0].n;
+}

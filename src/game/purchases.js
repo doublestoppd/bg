@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
 import { GameRuleError } from './errors.js';
-import { findShop, findEssential } from './shops.js';
+import { findShop, findEssential, findPoolEntry } from './shops.js';
 import { spendCoins } from './currency.js';
 import { grantItem } from './inventory.js';
 import { findItem } from './items.js';
+import { assertEligible } from './eligibility.js';
+import { SHOP_LIMITS } from './shop-limits.js';
 import { withTransaction, PG_DEADLOCK, PG_SERIALIZATION_FAILURE } from '../db/pool.js';
 import { lockUser } from '../db/users.js';
-import { insertPurchase, findPurchaseByKey, sumPurchasedFromListing } from '../db/shop-purchases.js';
+import { insertPurchase, findPurchaseByKey, sumPurchasedFromListing, countListingPurchasesSince } from '../db/shop-purchases.js';
 import { lockListing, decrementListing } from '../db/shop-stock.js';
 
 // ----- Tunable rules -----
@@ -53,22 +55,22 @@ function checkRequest({ shopId, itemId, listingId, quantity, shownPrice, request
     throw new GameRuleError('There is no such shop.');
   }
   if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > MAX_PURCHASE_QUANTITY) {
-    throw new GameRuleError(`You can buy between 1 and ${MAX_PURCHASE_QUANTITY} at a time.`);
+    throw new GameRuleError(`You can buy between 1 and ${MAX_PURCHASE_QUANTITY} at a time.`, 'bad_request');
   }
   if (!Number.isSafeInteger(shownPrice) || shownPrice < 1) {
-    throw new GameRuleError('That purchase form was out of date. Please try again.');
+    throw new GameRuleError('That purchase form was out of date. Please try again.', 'bad_request');
   }
   if (typeof requestId !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(requestId)) {
-    throw new GameRuleError('That purchase form was out of date. Please try again.');
+    throw new GameRuleError('That purchase form was out of date. Please try again.', 'bad_request');
   }
   const hasItem = itemId !== undefined && itemId !== null && itemId !== '';
   const listing = Number(listingId);
   const hasListing = listingId !== undefined && listingId !== null && listingId !== '';
   if (hasItem === hasListing) {
-    throw new GameRuleError('Choose one thing to buy.');
+    throw new GameRuleError('Choose one thing to buy.', 'bad_request');
   }
   if (hasListing && !Number.isSafeInteger(listing)) {
-    throw new GameRuleError(`${shop.name} does not sell that.`);
+    throw new GameRuleError(`${shop.name} does not sell that.`, 'bad_request');
   }
   return { shop, itemId: hasItem ? String(itemId) : null, listingId: hasListing ? listing : null, quantity, shownPrice, requestId };
 }
@@ -77,14 +79,15 @@ async function runPurchase(db, userId, { shop, itemId, listingId, quantity, show
   // Lock order 1: the player's row. This account's purchases now run one
   // at a time, so repeated requests always see the first one's result and
   // per-account limits are counted without races.
-  if (!(await lockUser(db, userId))) {
+  const user = await lockUser(db, userId);
+  if (!user) {
     throw new Error(`No user ${userId}`);
   }
 
   // Lock order 2: the listing, if buying limited stock.
   const offer = listingId === null
     ? essentialOffer(shop, itemId, quantity)
-    : await listingOffer(db, shop, listingId, quantity, userId);
+    : await listingOffer(db, shop, listingId, quantity, user);
 
   const requestHash = hashPurchase({ shopId: shop.id, itemId: offer.item.id, listingId, quantity, unitPrice: shownPrice });
   const previous = await findPurchaseByKey(db, userId, requestId);
@@ -96,7 +99,7 @@ async function runPurchase(db, userId, { shop, itemId, listingId, quantity, show
   }
 
   if (offer.unitPrice !== shownPrice) {
-    throw new GameRuleError(`The price of ${offer.item.name} has changed since you looked. Please check the new price.`);
+    throw new GameRuleError(`The price of ${offer.item.name} has changed since you looked. Please check the new price.`, 'price_changed');
   }
 
   const totalCost = offer.unitPrice * quantity;
@@ -108,7 +111,7 @@ async function runPurchase(db, userId, { shop, itemId, listingId, quantity, show
   if (listingId !== null && (await decrementListing(db, listingId, quantity)) !== 1) {
     // Cannot happen while we hold the listing's lock, but the stock must
     // never be allowed to go negative whatever else changes.
-    throw new GameRuleError(`${offer.item.name} has just sold out.`);
+    throw new GameRuleError(`${offer.item.name} has just sold out.`, 'sold_out');
   }
   const balance = await spendCoins(db, userId, totalCost, {
     reason: 'purchase', shopId: shop.id, itemId: offer.item.id, quantity, purchaseId: purchase.id,
@@ -121,38 +124,50 @@ async function runPurchase(db, userId, { shop, itemId, listingId, quantity, show
 function essentialOffer(shop, itemId, quantity) {
   const essential = findEssential(shop.id, itemId);
   if (!essential) {
-    throw new GameRuleError(`${shop.name} does not sell that.`);
+    throw new GameRuleError(`${shop.name} does not sell that.`, 'bad_request');
   }
   const maxQuantity = Math.min(essential.maxPerPurchase, MAX_PURCHASE_QUANTITY);
   if (quantity > maxQuantity) {
-    throw new GameRuleError(`You can buy at most ${maxQuantity} ${essential.item.name} at a time.`);
+    throw new GameRuleError(`You can buy at most ${maxQuantity} ${essential.item.name} at a time.`, 'limit_exceeded');
   }
   return { item: essential.item, unitPrice: essential.price, restockId: null, remaining: null };
 }
 
-// A limited listing: locked, must be live, in stock, and within limits.
-async function listingOffer(db, shop, listingId, quantity, userId) {
+// A limited listing: locked, must be live, in stock, within limits, and
+// the player must be allowed to buy it. The checks run from cheapest to
+// most specific so the message tells the player the most useful thing.
+async function listingOffer(db, shop, listingId, quantity, user) {
   const listing = await lockListing(db, listingId);
   if (!listing || listing.shop_id !== shop.id) {
-    throw new GameRuleError(`${shop.name} does not sell that.`);
+    throw new GameRuleError(`${shop.name} does not sell that.`, 'bad_request');
   }
   const item = findItem(listing.item_id);
   if (!listing.active) {
-    throw new GameRuleError(`That ${item.name} listing has gone; the shelves have been restocked since you looked.`);
+    throw new GameRuleError(`That ${item.name} listing has gone; the shelves have been restocked since you looked.`, 'expired_listing');
   }
   if (listing.remaining_quantity === 0) {
-    throw new GameRuleError(`${item.name} has sold out.`);
+    throw new GameRuleError(`${item.name} has sold out.`, 'sold_out');
   }
   if (listing.remaining_quantity < quantity) {
-    throw new GameRuleError(`Only ${listing.remaining_quantity} ${item.name} left.`);
+    throw new GameRuleError(`Only ${listing.remaining_quantity} ${item.name} left.`, 'sold_out');
   }
   if (quantity > listing.max_per_purchase) {
-    throw new GameRuleError(`You can buy at most ${listing.max_per_purchase} ${item.name} at a time.`);
+    throw new GameRuleError(`You can buy at most ${listing.max_per_purchase} ${item.name} at a time.`, 'limit_exceeded');
   }
-  const alreadyBought = await sumPurchasedFromListing(db, userId, listing.id);
+
+  // Who may buy: no restriction in force, and the entry's own rules.
+  await assertEligible(db, user, findPoolEntry(shop.id, listing.item_id));
+
+  // How much, per account: this listing, and limited stock in general.
+  const alreadyBought = await sumPurchasedFromListing(db, user.id, listing.id);
   if (alreadyBought + quantity > listing.max_per_account) {
-    throw new GameRuleError(`You can buy at most ${listing.max_per_account} ${item.name} from this restock, and you have ${alreadyBought}.`);
+    throw new GameRuleError(`You can buy at most ${listing.max_per_account} ${item.name} from this restock, and you have ${alreadyBought}.`, 'limit_exceeded');
   }
+  const recent = await countListingPurchasesSince(db, user.id, new Date(Date.now() - 60 * 60 * 1000));
+  if (recent >= SHOP_LIMITS.listingPurchasesPerHour) {
+    throw new GameRuleError(`You have bought ${recent} limited items in the last hour, which is the most allowed. Please come back later.`, 'limit_exceeded');
+  }
+
   return { item, unitPrice: listing.unit_price, restockId: listing.restock_id, remaining: listing.remaining_quantity };
 }
 

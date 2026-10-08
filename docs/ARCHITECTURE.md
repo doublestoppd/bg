@@ -45,12 +45,17 @@ src/
     shop-stock.js         SQL for limited listings
     daily-supply.js       SQL for daily supply caps
     request-counters.js   SQL for rate-limit counters
+    restrictions.js       SQL for administrator-imposed shopping restrictions
+    activity-log.js       SQL for the shop activity log
   game/            gameplay rules; no HTTP, no templates
     accounts.js    registration, login, welcome purse and items
     species.js     adoptable creatures (design content)
     items.js       the item catalog (design content) and its sync
     shops.js       the shop catalog: essentials and restock pools (design content)
     restocking.js  restock scheduling and generation
+    shop-limits.js every anti-abuse number in one place
+    eligibility.js who may buy limited stock
+    activity.js    the shop activity log
     inventory.js   granting and taking items
     currency.js    the only place coin balances change; writes the ledger
     purchases.js   buying from a shop
@@ -156,7 +161,9 @@ shared by every server process.
 requests in fixed windows in the `request_counters` table with a single
 upsert, so the count is exact under concurrent requests and shared across
 processes. `keyFrom` picks the counted party (the client IP by default, or
-the account). The scheduler prunes counters older than a day.
+the account). Login and registration are limited per IP; shop pages and
+purchases per account and per IP (`docs/SHOPS.md`, "Protections"). The
+scheduler prunes counters older than a day.
 
 ## How a request flows
 
@@ -222,9 +229,10 @@ definitions and comments):
 * `inventory`: one row per user per item type with a stack quantity
   (CHECK 1 to 999). An emptied stack is deleted.
 * `shop_purchases`: completed purchases with the request id that made them.
-* `shop_state`, `shop_restock_events`, `shop_stock`, `daily_item_supply`:
-  live shop schedules, restock history, limited listings and daily caps.
-  See `docs/SHOPS.md`.
+* `shop_state`, `shop_restock_events`, `shop_stock`, `daily_item_supply`,
+  `shopping_restrictions`, `shop_activity_log`: live shop schedules,
+  restock history, limited listings, daily caps, restrictions and the
+  activity log. See `docs/SHOPS.md`.
 * `coin_transactions`: the coin ledger; always sums to the balance.
 * `request_counters`: rate-limit windows.
 * `schema_migrations`: bookkeeping.

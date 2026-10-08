@@ -2,8 +2,8 @@
 
 How Blobgarden's NPC shops are defined, stocked, bought from, protected,
 and operated. Written for a JavaScript developer who is not a database
-specialist. (Anti-abuse rules and the admin utility are added in later
-milestones; this document grows with them.)
+specialist. (The admin utility is added in a later milestone; this
+document grows with it.)
 
 ## The idea
 
@@ -197,6 +197,85 @@ not enough coins, cannot carry more than 999, form out of date. A purchase
 that succeeded is in `shop_purchases` with its listing and restock ids, and
 its coin movement is in `coin_transactions` with `purchase_id` set.
 
+## Protections
+
+Competition is the point of the shops, so the protections aim to blunt
+the advantage of automation and multiple accounts without getting in the
+way of a person refreshing a shop by hand. Nothing here claims to stop a
+determined script entirely; the layers make it slower, less profitable,
+and visible. Every number lives in `src/game/shop-limits.js`.
+
+### Per-account limits (enforced inside the purchase transaction)
+
+With the player's row locked, so simultaneous requests cannot slip past:
+
+| Limit | Default | Where it comes from |
+|---|---|---|
+| Copies per purchase | per entry (`maxPerPurchase`) | catalog |
+| Copies per account per listing | per entry (`maxPerRestock`) | catalog, counted from `shop_purchases` |
+| Limited-stock purchases per account per hour | 30 | `listingPurchasesPerHour`, counted from `shop_purchases` |
+
+Essentials are not counted against the hourly limit: they never sell out,
+so there is nothing to monopolise, and a player must always be able to
+feed their pets.
+
+### Eligibility (limited stock only)
+
+* Any account with a **shopping restriction** in force cannot buy limited
+  stock. Essentials remain available. Restrictions are imposed and lifted
+  by an administrator with a reason, can carry an expiry, and are listed
+  in `shopping_restrictions` so every one can be reviewed. They are never
+  imposed automatically.
+* A pool entry may declare `eligibility`:
+  `minAccountAgeHours` (the account must be at least that old) and
+  `requiresPet` (the account must have adopted a pet). Both are facts the
+  game already records. Email verification and gameplay progression are
+  not implemented yet, so they are not available as rules; adding them is
+  future work that needs those features first.
+
+Ordinary essentials never carry eligibility rules, and ordinary limited
+stock should not either; reserve them for merchandise valuable enough to
+attract throwaway accounts.
+
+### Rate limits (counted in PostgreSQL, shared by every process)
+
+| What | Default | Scope |
+|---|---|---|
+| Shop page views | 60 per minute | per account |
+| Shop page views | 120 per minute | per IP address |
+| Buy submissions | 20 per minute | per account |
+| Refused purchases | 10 per 5 minutes, then buying pauses for the rest of the window | per account |
+
+The per-address allowance is deliberately larger than the per-account one
+so that a household, a school or a mobile network sharing one address is
+not blocked before any single account in it would be. Addresses are a
+signal, never an identity: nothing is decided about a player from their
+address alone. Refused requests get HTTP 429 with a `Retry-After` header
+and a plain message.
+
+### The activity log
+
+`shop_activity_log` records what an administrator would want to look at:
+every refused purchase with its kind (`sold_out`, `expired_listing`,
+`limit_exceeded`, `ineligible`, `restricted`, `price_changed`,
+`bad_request`), every rate-limit hit with the limit that fired, and every
+purchase of a rare item. Each row has the account, the client address, the
+shop and listing, and a few details; nothing else about the visitor is
+collected. Rows are deleted after 30 days (`ACTIVITY_LOG_RETENTION_DAYS`)
+by the scheduler. Successful purchases are not logged here because
+`shop_purchases` already is the record.
+
+### Multiple accounts
+
+Daily rewards, rare purchases and trading will tempt people to run several
+accounts. For now the limits above are per account and durable, rare
+acquisitions are logged, and restrictions are reviewable. What is
+deliberately not done: identifying players by address, device
+fingerprinting, or automatic bans for buying fast. When trading arrives,
+the activity log and purchase records are the evidence to review before
+restricting an account, and item transfers between very new accounts and
+established ones are the pattern to watch.
+
 ## The tables
 
 | Table | Holds |
@@ -206,6 +285,9 @@ its coin movement is in `coin_transactions` with `purchase_id` set.
 | `shop_stock` | one row per listing: item, price, initial and remaining quantity, per-purchase and per-account limits, `active`. Permanent. |
 | `daily_item_supply` | copies created per item per UTC day. |
 | `shop_purchases` | one row per purchase, pointing at its listing for limited stock. |
+| `shopping_restrictions` | administrator-imposed limited-stock bans, with reason, expiry and lifting. |
+| `shop_activity_log` | refused purchases, rate-limit hits and rare acquisitions, 30-day retention. |
+| `request_counters` | fixed-window request counts for every rate limit. |
 
 ## Changing things by hand
 
@@ -228,6 +310,10 @@ until then.
 * **Create rare merchandise**: a low `weight`, a small `quantity`, a high
   `price` range, `maxPerPurchase: 1`, and optionally a `dailySupplyCap` and
   `eligibility`.
+* **Configure purchase limits**: `maxPerPurchase` and `maxPerRestock` on
+  the entry; the hourly and rate limits in `src/game/shop-limits.js`.
+* **Configure account eligibility**: `eligibility: { minAccountAgeHours,
+  requiresPet }` on a pool entry.
 * **Stop selling something**: remove its entry. Players keep what they own.
 
 ## Deterministic testing

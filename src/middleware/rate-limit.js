@@ -12,7 +12,15 @@ import { incrementCounter } from '../db/request-counters.js';
 //                Pass (req) => req.currentUser.id for per-account limits.
 //   maxAttempts  requests allowed per window
 //   windowMs     window length
-export function createRateLimiter({ scope, keyFrom = (req) => req.ip, maxAttempts, windowMs }) {
+//   onLimited    optional async (req) => {} called when a request is
+//                refused, e.g. to log it
+// The start of the fixed window containing `now`, for callers that read
+// or bump a counter outside the middleware.
+export function windowStartFor(windowMs, now = Date.now()) {
+  return new Date(now - (now % windowMs));
+}
+
+export function createRateLimiter({ scope, keyFrom = (req) => req.ip, maxAttempts, windowMs, onLimited = null }) {
   return async function rateLimit(req, res, next) {
     try {
       const key = String(keyFrom(req));
@@ -21,6 +29,7 @@ export function createRateLimiter({ scope, keyFrom = (req) => req.ip, maxAttempt
       const count = await incrementCounter(req.app.locals.db, scope, key, windowStart);
 
       if (count > maxAttempts) {
+        if (onLimited) await onLimited(req);
         const retryAfterSeconds = Math.ceil((windowStart.getTime() + windowMs - now) / 1000);
         res.set('Retry-After', String(retryAfterSeconds));
         return res.status(429).render('error', {
