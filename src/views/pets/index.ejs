@@ -1,0 +1,22 @@
+<%- include('../partials/header') %>
+
+<% if (pets.length === 0) { %>
+<p>You have no pets yet. <a href="/pets/adopt">Adopt one</a> and give it a home.</p>
+<% } else { %>
+<ul class="item-grid">
+  <% for (const pet of pets) { %>
+  <li class="item-box">
+    <%- include('../partials/picture', { src: pet.speciesInfo.image, alt: pet.speciesInfo.name, cssClass: 'pet-thumb', width: 80, height: 80 }) %>
+    <div><a href="/pets/<%= pet.id %>"><%= pet.name %></a></div>
+    <div class="muted">the <%= pet.speciesInfo.name %></div>
+  </li>
+  <% } %>
+</ul>
+<% if (pets.length < maxPets) { %>
+<p><a href="/pets/adopt">Adopt another pet</a> (<%= maxPets - pets.length %> more allowed).</p>
+<% } else { %>
+<p>Your home is full. You can look after <%= maxPets %> pets at once.</p>
+<% } %>
+<% } %>
+
+<%- include('../partials/footer') %>

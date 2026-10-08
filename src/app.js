@@ -9,6 +9,7 @@ import { csrfProtection } from './middleware/csrf.js';
 import { loadCurrentUser } from './middleware/current-user.js';
 import homeRoutes from './routes/home.js';
 import authRoutes from './routes/auth.js';
+import petRoutes from './routes/pets.js';
 
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,6 +55,7 @@ export function createApp({ db }) {
 
   app.use('/', homeRoutes);
   app.use('/', authRoutes);
+  app.use('/pets', petRoutes);
 
   // --- Error pages ---
 

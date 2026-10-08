@@ -1,0 +1,35 @@
+<%- include('../partials/header') %>
+
+<% if (error) { %>
+<div class="notice notice-error"><p><%= error %></p></div>
+<% } %>
+
+<p>Choose a creature and give it a name. Choose carefully: names are for life.</p>
+
+<form method="post" action="/pets/adopt">
+  <%- include('../partials/csrf') %>
+
+  <ul class="item-grid species-choices">
+    <% for (const entry of species) { %>
+    <li class="item-box">
+      <label>
+        <%- include('../partials/picture', { src: entry.image, alt: entry.name, cssClass: 'species-portrait', width: 100, height: 100 }) %>
+        <div>
+          <input type="radio" name="species" value="<%= entry.slug %>" <%= chosen === entry.slug ? 'checked' : '' %> required>
+          <strong><%= entry.name %></strong>
+        </div>
+        <div class="muted"><%= entry.description %></div>
+      </label>
+    </li>
+    <% } %>
+  </ul>
+
+  <div class="form-row">
+    <label for="name">Pet name</label>
+    <input type="text" id="name" name="name" value="<%= name %>" maxlength="20" required>
+  </div>
+
+  <button type="submit">Adopt</button>
+</form>
+
+<%- include('../partials/footer') %>

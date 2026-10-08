@@ -1,0 +1,26 @@
+<%- include('../partials/header') %>
+
+<% if (justAdopted) { %>
+<div class="notice notice-success"><p><%= pet.name %> has come to live with you. Be kind.</p></div>
+<% } %>
+
+<div class="illustration-box">
+  <%- include('../partials/picture', { src: pet.speciesInfo.image, alt: pet.speciesInfo.name, cssClass: 'species-portrait', width: 200, height: 200 }) %>
+</div>
+
+<p><strong><%= pet.name %></strong> the <%= pet.speciesInfo.name %>.
+<%= pet.speciesInfo.description %></p>
+
+<table class="stat-table">
+  <% for (const stat of ['hunger', 'happiness', 'health']) { %>
+  <tr>
+    <th><%= stat.charAt(0).toUpperCase() + stat.slice(1) %></th>
+    <td><div class="stat-bar"><div class="stat-bar-fill" style="width: <%= pet[stat] %>%"></div></div></td>
+    <td class="stat-number"><%= pet[stat] %>/100</td>
+  </tr>
+  <% } %>
+</table>
+
+<p><a href="/pets">Back to my pets</a></p>
+
+<%- include('../partials/footer') %>
