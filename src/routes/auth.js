@@ -9,9 +9,9 @@ router.get('/register', (req, res) => {
   res.render('register', { title: 'Create an account', error: null, username: '' });
 });
 
-router.post('/register', (req, res, next) => {
+router.post('/register', async (req, res, next) => {
   try {
-    const user = registerAccount(req.app.locals.db, {
+    const user = await registerAccount(req.app.locals.db, {
       username: req.body.username,
       password: req.body.password,
     });
@@ -33,9 +33,9 @@ router.get('/login', (req, res) => {
   res.render('login', { title: 'Log in', error: null, username: '' });
 });
 
-router.post('/login', (req, res, next) => {
+router.post('/login', async (req, res, next) => {
   try {
-    const user = authenticate(req.app.locals.db, {
+    const user = await authenticate(req.app.locals.db, {
       username: req.body.username,
       password: req.body.password,
     });

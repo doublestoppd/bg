@@ -11,11 +11,15 @@ export class SqliteSessionStore extends Store {
     super();
     this.db = db;
     this.statements = {
-      get: db.prepare("SELECT data FROM sessions WHERE sid = ? AND expires_at > datetime('now')"),
+      // expires_at is stored as an ISO 8601 string ("2026-01-01T12:00:00.000Z")
+      // while datetime('now') produces "2026-01-01 12:00:00". The two formats
+      // do not sort together as plain text, so both sides must go through
+      // datetime() before comparing.
+      get: db.prepare("SELECT data FROM sessions WHERE sid = ? AND datetime(expires_at) > datetime('now')"),
       set: db.prepare('INSERT OR REPLACE INTO sessions (sid, data, expires_at) VALUES (?, ?, ?)'),
       destroy: db.prepare('DELETE FROM sessions WHERE sid = ?'),
       touch: db.prepare('UPDATE sessions SET expires_at = ? WHERE sid = ?'),
-      deleteExpired: db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')"),
+      deleteExpired: db.prepare("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')"),
     };
 
     // Sweep out expired rows now and then. unref() lets the process exit

@@ -65,7 +65,9 @@ field, and the `picture` partial that shows a placeholder until artwork
 exists.
 
 **Middleware** (`src/middleware`) is small and generic: CSRF checking, loading
-the logged-in user, and redirecting guests away from protected pages.
+the logged-in user, redirecting guests away from protected pages, and an
+in-memory rate limiter that `app.js` places in front of the login and
+registration forms.
 
 ## How a request flows
 
@@ -92,8 +94,22 @@ functions it uses.
 
 ## Security basics
 
-* Passwords are hashed with scrypt and a random salt.
+* Passwords are hashed with scrypt and a random salt. Hashing uses the
+  asynchronous `crypto.scrypt`, which runs in Node's thread pool, so a burst
+  of logins does not block the single JavaScript thread that serves every
+  other page. Because of this, `registerAccount` and `authenticate` are
+  `async`, and the hash is computed *before* the database transaction:
+  better-sqlite3 transactions must not contain an `await`.
 * Session cookies are `httpOnly`, `sameSite=lax`, and `secure` in production.
+  Session rows store `expires_at` as an ISO 8601 string; SQL that compares it
+  with `datetime('now')` must wrap both sides in `datetime()`, because the
+  two text formats do not sort together.
+* Login and registration are rate limited per IP address
+  (`src/middleware/rate-limit.js`). The limiter keeps its counts in memory,
+  which is appropriate for a single-process server.
+* Behind a reverse proxy, `TRUST_PROXY` sets Express's `trust proxy` option.
+  That is what lets `req.secure` (and therefore the secure cookie) and
+  `req.ip` (and therefore rate limiting) reflect the real client.
 * Every state-changing form carries a CSRF token tied to the session.
 * All SQL is parameterised. Never build SQL from strings.
 * Ownership is checked in the game layer: a pet page loads the pet by id

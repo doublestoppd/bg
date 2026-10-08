@@ -4,41 +4,41 @@ import { openDatabase } from '../../src/db/connection.js';
 import { registerAccount, authenticate, STARTING_COINS, hashPassword, verifyPassword } from '../../src/game/accounts.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
-test('registering creates a user with starting coins', () => {
+test('registering creates a user with starting coins', async () => {
   const db = openDatabase(':memory:');
-  const user = registerAccount(db, { username: 'wobble', password: 'correct horse' });
+  const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   assert.equal(user.username, 'wobble');
   assert.equal(user.coins, STARTING_COINS);
   assert.equal(user.password_hash, undefined, 'password hash must not be returned');
 });
 
-test('usernames must be unique, ignoring case', () => {
+test('usernames must be unique, ignoring case', async () => {
   const db = openDatabase(':memory:');
-  registerAccount(db, { username: 'Wobble', password: 'correct horse' });
-  assert.throws(() => registerAccount(db, { username: 'wobble', password: 'another one' }), GameRuleError);
+  await registerAccount(db, { username: 'Wobble', password: 'correct horse' });
+  await assert.rejects(registerAccount(db, { username: 'wobble', password: 'another one' }), GameRuleError);
 });
 
-test('bad usernames and short passwords are rejected', () => {
+test('bad usernames and short passwords are rejected', async () => {
   const db = openDatabase(':memory:');
-  assert.throws(() => registerAccount(db, { username: 'ab', password: 'long enough' }), GameRuleError);
-  assert.throws(() => registerAccount(db, { username: 'has space', password: 'long enough' }), GameRuleError);
-  assert.throws(() => registerAccount(db, { username: 'fine', password: 'short' }), GameRuleError);
+  await assert.rejects(registerAccount(db, { username: 'ab', password: 'long enough' }), GameRuleError);
+  await assert.rejects(registerAccount(db, { username: 'has space', password: 'long enough' }), GameRuleError);
+  await assert.rejects(registerAccount(db, { username: 'fine', password: 'short' }), GameRuleError);
 });
 
-test('authenticate accepts the right password and rejects the wrong one', () => {
+test('authenticate accepts the right password and rejects the wrong one', async () => {
   const db = openDatabase(':memory:');
-  registerAccount(db, { username: 'wobble', password: 'correct horse' });
-  const user = authenticate(db, { username: 'wobble', password: 'correct horse' });
+  await registerAccount(db, { username: 'wobble', password: 'correct horse' });
+  const user = await authenticate(db, { username: 'wobble', password: 'correct horse' });
   assert.equal(user.username, 'wobble');
-  assert.throws(() => authenticate(db, { username: 'wobble', password: 'wrong' }), GameRuleError);
-  assert.throws(() => authenticate(db, { username: 'nobody', password: 'correct horse' }), GameRuleError);
+  await assert.rejects(authenticate(db, { username: 'wobble', password: 'wrong' }), GameRuleError);
+  await assert.rejects(authenticate(db, { username: 'nobody', password: 'correct horse' }), GameRuleError);
 });
 
-test('password hashes are salted and verifiable', () => {
-  const first = hashPassword('secret words');
-  const second = hashPassword('secret words');
+test('password hashes are salted and verifiable', async () => {
+  const first = await hashPassword('secret words');
+  const second = await hashPassword('secret words');
   assert.notEqual(first, second, 'same password should produce different hashes');
-  assert.ok(verifyPassword('secret words', first));
-  assert.ok(!verifyPassword('other words', first));
-  assert.ok(!verifyPassword('secret words', 'garbage'));
+  assert.ok(await verifyPassword('secret words', first));
+  assert.ok(!(await verifyPassword('other words', first)));
+  assert.ok(!(await verifyPassword('secret words', 'garbage')));
 });
