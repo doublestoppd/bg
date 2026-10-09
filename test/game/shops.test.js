@@ -36,7 +36,7 @@ test('pool entries are looked up per shop', () => {
 
 test('scarcity settings live on the shop entry, not the item', () => {
   const pebble = findPoolEntry('questionable-grocer', 'fizzing-pebble');
-  assert.deepEqual(Object.keys(pebble).sort(), ['item', 'itemId', 'maxPerPurchase', 'maxPerRestock', 'price', 'quantity', 'weight']);
+  assert.deepEqual(Object.keys(pebble).sort(), ['item', 'itemId', 'price', 'quantity', 'weight']);
   assert.equal('rarity' in pebble.item, false);
   // Weights are relative: the pebble's 10 against the jar's 1 says nothing
   // on its own about percentages, only about the ratio between them.

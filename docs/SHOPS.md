@@ -19,7 +19,7 @@ commits first gets the item.
 
 | What | Where |
 |---|---|
-| Shop definitions, merchandise, prices, weights, limits | `src/game/shops.js` (JavaScript, hand-edited) |
+| Shop definitions, merchandise, prices, weights | `src/game/shops.js` (JavaScript, hand-edited) |
 | Restock rules and the planner | `src/game/restocking.js` |
 | Schedules, current stock, history | PostgreSQL tables (below) |
 | The background tick that restocks due shops | `src/scheduler.js` |
@@ -40,10 +40,10 @@ A shop is one object in the list in `src/game/shops.js`:
   keeper: { name: 'Mungle', image: null, lines: ['Everything is fresh. Define fresh.'] },
   restock: { minMinutes: 8, maxMinutes: 18, listingsMin: 1, listingsMax: 2 },
   restockPool: [
-    { itemId: 'soggy-biscuit', weight: 20, quantity: [8, 15], price: [4, 6], maxPerPurchase: 20, maxPerRestock: 40 },
-    { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
-    { itemId: 'unlabelled-jar', weight: 1, quantity: [2, 5], price: [300, 450], maxPerPurchase: 1, maxPerRestock: 1,
-      dailySupplyCap: 4, eligibility: { minAccountAgeHours: 24, requiresPet: true } },
+    { itemId: 'soggy-biscuit', weight: 20, quantity: [8, 15], price: [4, 6] },
+    { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24] },
+    { itemId: 'unlabelled-jar', weight: 1, quantity: [2, 5], price: [300, 450],
+      eligibility: { minAccountAgeHours: 24, requiresPet: true } },
   ],
 }
 ```
@@ -76,12 +76,13 @@ entries from it:
 * `quantity: [low, high]`: copies per restock, drawn each time. Independent
   of the weight: an item can be picked often but two at a time, or seldom
   but a dozen at once.
-* `maxPerPurchase`: most copies in one purchase.
-* `maxPerRestock`: most copies one account may buy from one listing.
-* `dailySupplyCap` (optional): most copies all restocks together may
-  create per UTC day. See "Daily supply caps".
 * `eligibility` (optional): who may buy. Currently `minAccountAgeHours`
   and `requiresPet`.
+
+There is no cap on how many copies one purchase or one account may take
+from a listing, and no daily cap on how many copies restocks create.
+Whoever gets to a listing first may buy all of it; the scarcity of a thing
+is its weight, its quantity range and how often the shop restocks.
 
 Items carry no rarity. There is no field, score or tier anywhere in the
 game that says how rare something is; scarcity comes entirely from these
@@ -105,12 +106,10 @@ quantity and caps are always explicit per entry.
    (between `listingsMin` and `listingsMax`, at most half the pool),
    which entries (weighted, no repeats), and each one's quantity and
    price, using `crypto.randomInt`.
-6. Entries with a daily cap reserve their quantity against
-   `daily_item_supply`; if the cap is spent the listing is shrunk or dropped.
-7. The listings are inserted, and `shop_state` gets the new event id, the
+6. The listings are inserted, and `shop_state` gets the new event id, the
    time of this restock, and the next time: now plus a random number of
    minutes between `minMinutes` and `maxMinutes`.
-8. Commit. If anything fails, nothing changed and the shop is still due,
+7. Commit. If anything fails, nothing changed and the shop is still due,
    so the next tick tries again.
 
 Players never see the next restock time. The page says only whether the
@@ -128,14 +127,6 @@ outage cannot flood the economy.
 The next restock replaces the previous assortment entirely, sold or not.
 Old listings, old events and every purchase record stay in the database
 for history; they are only marked inactive or superseded.
-
-### Daily supply caps
-
-A cap counts copies *created by restocks* on one UTC day across every shop,
-not copies players own. The count lives in `daily_item_supply`, one row per
-item per day, and is updated under a row lock inside the restock
-transaction, so two shops restocking at the same moment cannot both squeeze
-under the cap. The day boundary is midnight UTC.
 
 ## Buying
 
@@ -162,9 +153,7 @@ time from the entry's price range.
 1. Lock the player's row (`SELECT ... FOR UPDATE`). This account's
    purchases now run one at a time.
 2. Lock the listing row. It must belong to this shop, be active (not
-   replaced by a later restock), have enough copies, and the quantity must
-   respect `maxPerPurchase` and, counting what this account already bought
-   from it, `maxPerRestock`.
+   replaced by a later restock), and have enough copies.
 3. If this `request_id` was already used by this account, return that
    purchase (if it was for the same thing) or refuse (if not).
 4. Compare the shown price with the real one.
@@ -209,8 +198,8 @@ one's result.
 
 Every refusal is a `GameRuleError` whose message is shown to the player
 and is specific: no such shop, not sold here, listing gone, sold out, only
-N left, at most N at a time, at most N from this restock, price changed,
-not enough coins, cannot carry more than 999, form out of date. A purchase
+N left, price changed, not enough coins, cannot carry more than 999, too
+many purchases this hour, form out of date. A purchase
 that succeeded is in `shop_purchases` with its listing and restock ids, and
 its coin movement is in `coin_transactions` with `purchase_id` set.
 
@@ -228,9 +217,9 @@ With the player's row locked, so simultaneous requests cannot slip past:
 
 | Limit | Default | Where it comes from |
 |---|---|---|
-| Copies per purchase | per entry (`maxPerPurchase`) | catalog |
-| Copies per account per listing | per entry (`maxPerRestock`) | catalog, counted from `shop_purchases` |
 | Purchases per account per hour | 30 | `purchasesPerHour`, counted from `shop_purchases` |
+| Copies per purchase | 99 | `MAX_PURCHASE_QUANTITY`, an integer-safety bound rather than a game rule |
+| Copies per stack | 999 | `MAX_STACK_SIZE` in `src/game/inventory.js` |
 
 ### Eligibility
 
@@ -296,8 +285,7 @@ established ones are the pattern to watch.
 |---|---|
 | `shop_state` | one row per shop: paused flag, last and next restock time, current restock id. Created at startup if missing, never reset. |
 | `shop_restock_events` | one row per restock: who triggered it (`scheduler` or `admin:<name>`), how many listings, when it was superseded. Permanent. |
-| `shop_stock` | one row per listing: item, price, initial and remaining quantity, per-purchase and per-account limits, `active`. Permanent. |
-| `daily_item_supply` | copies created per item per UTC day. |
+| `shop_stock` | one row per listing: item, price, initial and remaining quantity, `active`. Permanent. |
 | `shop_purchases` | one row per purchase, pointing at its listing for limited stock. |
 | `shopping_restrictions` | administrator-imposed limited-stock bans, with reason, expiry and lifting. |
 | `shop_activity_log` | refused purchases, rate-limit hits and administrator actions, 30-day retention. |
@@ -322,11 +310,10 @@ until then.
   restock; that is deliberate.
 * **Change quantities**: edit `quantity: [low, high]` on the entry.
 * **Make something scarce**: a low `weight`, a small `quantity`, a high
-  `price` range, `maxPerPurchase: 1`, and optionally a `dailySupplyCap` and
-  `eligibility`. There is no rarity label to set; the item becomes scarce
-  because it is distributed scarcely.
-* **Configure purchase limits**: `maxPerPurchase` and `maxPerRestock` on
-  the entry; the hourly and rate limits in `src/game/shop-limits.js`.
+  `price` range, and optionally `eligibility`. There is no rarity label to
+  set; the item becomes scarce because it is distributed scarcely.
+* **Configure purchase limits**: the hourly and rate limits in
+  `src/game/shop-limits.js`.
 * **Configure account eligibility**: `eligibility: { minAccountAgeHours,
   requiresPet }` on a pool entry.
 * **Stop selling something**: remove its entry. Players keep what they own.
@@ -370,7 +357,7 @@ that name, so the history always says who did what.
 | Lift that | `npm run shop-admin -- unrestrict wobble --by yourname` |
 
 A manual restock goes through exactly the same function as the scheduler:
-it takes the shop lock, replaces the shelves, obeys daily caps, and is
+it takes the shop lock, replaces the shelves, and is
 recorded in `shop_restock_events` with `triggered_by = admin:<name>`. A
 paused shop can still be restocked by hand. Omit `--hours` on a
 restriction to make it last until lifted.

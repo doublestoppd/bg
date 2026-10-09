@@ -5,7 +5,6 @@ import { withTransaction } from '../db/pool.js';
 import { ensureShopState, lockShopStateSkipLocked, recordRestock, findShopState } from '../db/shop-state.js';
 import { insertRestockEvent, setRestockListingCount, supersedeRestocks } from '../db/shop-restock-events.js';
 import { insertListing, deactivateListings, findActiveListings } from '../db/shop-stock.js';
-import { reserveDailySupply } from '../db/daily-supply.js';
 
 // Restocking: when a shop is due, replace its limited listings with a new
 // random assortment drawn from its restockPool, and schedule the next one.
@@ -71,22 +70,14 @@ export async function restockShopWithDefinition(pool, shop, { force = false, tri
     await supersedeRestocks(db, shopId, now);
 
     const event = await insertRestockEvent(db, { shopId, triggeredBy, createdAt: now });
-    const supplyDate = now.toISOString().slice(0, 10); // UTC day
     const listings = [];
     for (const planned of planRestock(shop, random)) {
-      let quantity = planned.quantity;
-      if (planned.dailySupplyCap !== undefined) {
-        quantity = await reserveDailySupply(db, planned.itemId, supplyDate, quantity, planned.dailySupplyCap);
-        if (quantity === 0) continue; // the cap is spent for today
-      }
       listings.push(await insertListing(db, {
         shopId,
         restockId: event.id,
         itemId: planned.itemId,
         unitPrice: planned.unitPrice,
-        quantity,
-        maxPerPurchase: planned.maxPerPurchase,
-        maxPerAccount: planned.maxPerRestock,
+        quantity: planned.quantity,
       }));
     }
     await setRestockListingCount(db, event.id, listings.length);
@@ -123,9 +114,6 @@ export function planRestock(shop, random) {
       itemId: entry.itemId,
       quantity: random.int(qLo, qHi),
       unitPrice: random.int(pLo, pHi),
-      maxPerPurchase: entry.maxPerPurchase,
-      maxPerRestock: entry.maxPerRestock,
-      dailySupplyCap: entry.dailySupplyCap,
     });
   }
   return chosen;

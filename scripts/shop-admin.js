@@ -39,7 +39,7 @@ const commands = {
   stock: async (pool) => {
     const { state, listings } = await admin.shopStock(pool, need(target, 'shop'));
     console.log(state ? `paused: ${state.paused}, last restock: ${when(state.last_restock_at)}, next: ${when(state.next_restock_at)}, restock id: ${state.current_restock_id}` : 'no state row yet (server has not started)');
-    table(listings.map((l) => ({ id: l.id, item: l.item_id, price: l.unit_price, remaining: `${l.remaining_quantity}/${l.initial_quantity}`, perPurchase: l.max_per_purchase, perAccount: l.max_per_account })));
+    table(listings.map((l) => ({ id: l.id, item: l.item_id, price: l.unit_price, remaining: `${l.remaining_quantity}/${l.initial_quantity}` })));
   },
   history: async (pool) => table(await admin.shopHistory(pool, need(target, 'shop'), limit)),
   purchases: async (pool) => table(await admin.shopPurchases(pool, need(target, 'shop'), limit)),

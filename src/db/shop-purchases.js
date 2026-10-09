@@ -27,15 +27,6 @@ export async function findPurchasesByUser(db, userId) {
   return rows;
 }
 
-// How many copies this account has already bought from one listing.
-export async function sumPurchasedFromListing(db, userId, stockId) {
-  const { rows } = await db.query(
-    'SELECT COALESCE(SUM(quantity), 0)::int AS total FROM shop_purchases WHERE user_id = $1 AND stock_id = $2',
-    [userId, stockId],
-  );
-  return rows[0].total;
-}
-
 // Successful purchases by an account since a point in time.
 export async function countPurchasesSince(db, userId, since) {
   const { rows } = await db.query(

@@ -43,7 +43,6 @@ src/
     shop-state.js         SQL for shop schedules
     shop-restock-events.js  SQL for restock history
     shop-stock.js         SQL for limited listings
-    daily-supply.js       SQL for daily supply caps
     request-counters.js   SQL for rate-limit counters
     restrictions.js       SQL for administrator-imposed shopping restrictions
     activity-log.js       SQL for the shop activity log
@@ -234,10 +233,10 @@ definitions and comments):
 * `inventory`: one row per user per item type with a stack quantity
   (CHECK 1 to 999). An emptied stack is deleted.
 * `shop_purchases`: completed purchases with the request id that made them.
-* `shop_state`, `shop_restock_events`, `shop_stock`, `daily_item_supply`,
+* `shop_state`, `shop_restock_events`, `shop_stock`,
   `shopping_restrictions`, `shop_activity_log`: live shop schedules,
-  restock history, limited listings, daily caps, restrictions and the
-  activity log. See `docs/SHOPS.md`.
+  restock history, listings, restrictions and the activity log. See
+  `docs/SHOPS.md`.
 * `coin_transactions`: the coin ledger; always sums to the balance.
 * `request_counters`: rate-limit windows.
 * `schema_migrations`: bookkeeping.
@@ -295,7 +294,7 @@ their own reason.
 `purchaseItem` in `src/game/purchases.js` buys from a listing in the
 current restock. Inside one transaction it locks the player's row, then
 the listing; checks it is
-live, in stock and within the per-purchase and per-restock limits; replays
+live, in stock and within the account's hourly allowance; replays
 a repeated request id instead of buying twice; refuses if the price the
 player saw differs from the real one; then inserts the purchase, takes the
 stock, spends the coins and grants the item. Every one of those updates

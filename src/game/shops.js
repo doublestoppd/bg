@@ -20,10 +20,6 @@ import { findItem } from './items.js';
 //                    half the pool size (see validation below).
 //   quantity: [lo, hi]  copies per restock, drawn each time
 //   price: [lo, hi]  each restock draws a price in this range
-//   maxPerPurchase   most copies in one purchase
-//   maxPerRestock    most copies one account may buy from one listing
-//   dailySupplyCap   optional: most copies restocks may create across all
-//                    shops per UTC day
 //   eligibility      optional: { minAccountAgeHours, requiresPet }
 //
 // Items have no rarity of their own. How scarce something is comes
@@ -67,18 +63,15 @@ const shops = [
       listingsMax: 2,
     },
     restockPool: [
-      { itemId: 'soggy-biscuit', weight: 20, quantity: [8, 15], price: [4, 6], maxPerPurchase: 20, maxPerRestock: 40 },
-      { itemId: 'humming-turnip', weight: 12, quantity: [4, 8], price: [10, 14], maxPerPurchase: 10, maxPerRestock: 20 },
-      { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
-      { itemId: 'pickled-moonbeam', weight: 3, quantity: [1, 2], price: [55, 80], maxPerPurchase: 1, maxPerRestock: 2 },
+      { itemId: 'soggy-biscuit', weight: 20, quantity: [8, 15], price: [4, 6] },
+      { itemId: 'humming-turnip', weight: 12, quantity: [4, 8], price: [10, 14] },
+      { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24] },
+      { itemId: 'pickled-moonbeam', weight: 3, quantity: [1, 2], price: [55, 80] },
       {
         itemId: 'unlabelled-jar',
         weight: 1,
         quantity: [2, 5],
         price: [300, 450],
-        maxPerPurchase: 1,
-        maxPerRestock: 1,
-        dailySupplyCap: 4,
         eligibility: { minAccountAgeHours: 24, requiresPet: true },
       },
     ],
@@ -143,16 +136,9 @@ function validateShops(list) {
       if (!item.obtainable) throw new Error(`${where} sells "${entry.itemId}", which is no longer obtainable`);
       if (seenItems.has(entry.itemId)) throw new Error(`${where} lists "${entry.itemId}" twice`);
       seenItems.add(entry.itemId);
-      if (!isWholeNumber(entry.maxPerPurchase, 1) || entry.maxPerPurchase > MAX_LISTING_QUANTITY) {
-        throw new Error(`${where}: "${entry.itemId}" needs maxPerPurchase from 1 to ${MAX_LISTING_QUANTITY}`);
-      }
       if (!isWholeNumber(entry.weight, 1)) throw new Error(`${where}: "${entry.itemId}" weight must be a positive whole number`);
       checkRange(entry.price, 1, MAX_PRICE, `${where}: "${entry.itemId}" price`);
       checkRange(entry.quantity, 1, MAX_LISTING_QUANTITY, `${where}: "${entry.itemId}" quantity`);
-      if (!isWholeNumber(entry.maxPerRestock, 1)) throw new Error(`${where}: "${entry.itemId}" needs maxPerRestock >= 1`);
-      if (entry.dailySupplyCap !== undefined && !isWholeNumber(entry.dailySupplyCap, 1)) {
-        throw new Error(`${where}: "${entry.itemId}" dailySupplyCap must be a positive whole number`);
-      }
       const e = entry.eligibility;
       if (e !== undefined) {
         if (typeof e !== 'object' || e === null) throw new Error(`${where}: "${entry.itemId}" eligibility must be an object`);

@@ -8,17 +8,17 @@ import { assertEligible } from './eligibility.js';
 import { SHOP_LIMITS } from './shop-limits.js';
 import { withTransaction, PG_DEADLOCK, PG_SERIALIZATION_FAILURE, PG_UNIQUE_VIOLATION } from '../db/pool.js';
 import { lockUser } from '../db/users.js';
-import { insertPurchase, findPurchaseByKey, sumPurchasedFromListing, countPurchasesSince } from '../db/shop-purchases.js';
+import { insertPurchase, findPurchaseByKey, countPurchasesSince } from '../db/shop-purchases.js';
 import { lockListing, decrementListing } from '../db/shop-stock.js';
 
 // ----- Tunable rules -----
-// A hard ceiling on one purchase, above any entry's own maxPerPurchase.
-// The 999 stack limit in game/inventory.js still applies on top of this.
+// A hard ceiling on one purchase, an integer-safety bound rather than a
+// game rule. The 999 stack limit in game/inventory.js applies on top.
 export const MAX_PURCHASE_QUANTITY = 99;
 
 // The most of a listing one purchase may take right now.
 export function listingMaxQuantity(listing) {
-  return Math.min(listing.max_per_purchase, listing.remaining_quantity, MAX_PURCHASE_QUANTITY);
+  return Math.min(listing.remaining_quantity, MAX_PURCHASE_QUANTITY);
 }
 // How many times a purchase is retried after a PostgreSQL deadlock. The
 // request id makes a retry safe: it can never buy twice.
@@ -140,18 +140,11 @@ async function listingOffer(db, shop, listingId, quantity, user) {
   if (listing.remaining_quantity < quantity) {
     throw new GameRuleError(`Only ${listing.remaining_quantity} ${item.name} left.`, 'sold_out');
   }
-  if (quantity > listing.max_per_purchase) {
-    throw new GameRuleError(`You can buy at most ${listing.max_per_purchase} ${item.name} at a time.`, 'limit_exceeded');
-  }
 
   // Who may buy: no restriction in force, and the entry's own rules.
   await assertEligible(db, user, findPoolEntry(shop.id, listing.item_id));
 
-  // How much, per account: this listing, and shop purchases in general.
-  const alreadyBought = await sumPurchasedFromListing(db, user.id, listing.id);
-  if (alreadyBought + quantity > listing.max_per_account) {
-    throw new GameRuleError(`You can buy at most ${listing.max_per_account} ${item.name} from this restock, and you have ${alreadyBought}.`, 'limit_exceeded');
-  }
+  // How often, per account.
   const recent = await countPurchasesSince(db, user.id, new Date(Date.now() - 60 * 60 * 1000));
   if (recent >= SHOP_LIMITS.purchasesPerHour) {
     throw new GameRuleError(`You have made ${recent} purchases in the last hour, which is the most allowed. Please come back later.`, 'limit_exceeded');

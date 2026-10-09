@@ -7,7 +7,7 @@ test('migrations create the tables and are not applied twice', async () => {
   const db = await resetDatabase();
   const { rows } = await db.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename");
   assert.deepEqual(rows.map((r) => r.tablename), [
-    'coin_transactions', 'daily_item_supply', 'inventory', 'items', 'pets', 'request_counters', 'schema_migrations', 'sessions',
+    'coin_transactions', 'inventory', 'items', 'pets', 'request_counters', 'schema_migrations', 'sessions',
     'shop_activity_log', 'shop_purchases', 'shop_restock_events', 'shop_state', 'shop_stock', 'shopping_restrictions', 'users',
   ]);
 

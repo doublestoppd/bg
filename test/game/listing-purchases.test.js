@@ -117,13 +117,12 @@ test('7. a forged or stale shown price is refused and never charged', async () =
   assert.equal(ok.totalCost, 20, 'extra fields are ignored');
 });
 
-test('8. quantity must be valid and within the listing\'s per-purchase limit', async () => {
+test('8. quantity, request id and shown price must be valid', async () => {
   const { db, user } = await setup();
-  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 10, price: 5, maxPerPurchase: 3, maxPerRestock: 10 });
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 10, price: 5 });
   for (const quantity of [0, -1, 1.5, '2', NaN, Infinity, MAX_PURCHASE_QUANTITY + 1, undefined]) {
     await assert.rejects(buy(db, user.id, listing, quantity), GameRuleError, String(quantity));
   }
-  await assert.rejects(buy(db, user.id, listing, 4), /at most 3 Fizzing Pebble at a time/);
   for (const requestId of [undefined, '', 'short', 'has spaces in it here', 42]) {
     await assert.rejects(buy(db, user.id, listing, 1, { requestId }), /out of date/, String(requestId));
   }
@@ -145,28 +144,13 @@ test('a full stack rolls the coins, the stock and the purchase record back', asy
 
 test('simultaneous purchases stop exactly when the coins run out', async () => {
   const { db, user } = await setup();
-  const listing = await stockOne(db, 'soggy-biscuit', { quantity: 100, price: 5, maxPerPurchase: 1, maxPerRestock: 100 });
+  const listing = await stockOne(db, 'soggy-biscuit', { quantity: 100, price: 5 });
   const results = await Promise.allSettled(Array.from({ length: 30 }, () => buy(db, user.id, listing, 1)));
   assert.equal(results.filter((r) => r.status === 'fulfilled').length, 20, '100 coins buys twenty 5-coin biscuits');
   for (const r of results.filter((r) => r.status === 'rejected')) assert.ok(r.reason instanceof GameRuleError);
   assert.equal(await getBalance(db, user.id), 0);
   assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 23);
   assert.equal((await remaining(db, listing)).remaining_quantity, 80);
-});
-
-test('9. per-account per-restock limits hold, even under simultaneous requests', async () => {
-  const { db, user } = await setup();
-  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 20, price: 1, maxPerPurchase: 3, maxPerRestock: 5 });
-  await buy(db, user.id, listing, 3);
-  await assert.rejects(buy(db, user.id, listing, 3), /at most 5 Fizzing Pebble from this restock, and you have 3/);
-  await buy(db, user.id, listing, 2);
-  await assert.rejects(buy(db, user.id, listing, 1), /from this restock/);
-
-  const other = await registerAccount(db, { username: 'rival', password: 'correct horse' });
-  const results = await Promise.allSettled(Array.from({ length: 6 }, () => buy(db, other.id, listing, 1)));
-  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 5, 'five of six simultaneous buys fit under the limit');
-  assert.equal(await countOwned(db, other.id, 'fizzing-pebble'), 5);
-  assert.equal((await remaining(db, listing)).remaining_quantity, 10);
 });
 
 test('10. a duplicate request id replays the first purchase; a reused one for a different purchase is refused', async () => {
@@ -196,7 +180,7 @@ test('11. simultaneous duplicate requests buy once', async () => {
 test('12. two players racing for the last copy on separate connections: exactly one wins', async () => {
   const { db, user } = await setup();
   const rival = await registerAccount(db, { username: 'rival', password: 'correct horse' });
-  const listing = await stockOne(db, 'pickled-moonbeam', { quantity: 1, price: 60, maxPerPurchase: 1, maxPerRestock: 1 });
+  const listing = await stockOne(db, 'pickled-moonbeam', { quantity: 1, price: 60 });
   const other = createPool(config.testDatabaseUrl);
   try {
     const results = await Promise.allSettled([
@@ -245,7 +229,7 @@ test('14. a failure while charging coins rolls back the stock decrement', async 
 
 test('17. stock can never go negative, even under a crowd', async () => {
   const { db } = await setup();
-  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 3, price: 1, maxPerPurchase: 3, maxPerRestock: 3 });
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 3, price: 1 });
   const players = [];
   for (let i = 0; i < 8; i++) players.push(await registerAccount(db, { username: `player${i}`, password: 'correct horse' }));
   const results = await Promise.allSettled(players.map((p) => buy(db, p.id, listing, 1)));
@@ -297,7 +281,7 @@ test('19. a restock that replaces a listing waits for a purchase in flight, and 
 
 test('the ledger, purchases and stock agree after a busy restock', async () => {
   const { db } = await setup();
-  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 12, price: 7, maxPerPurchase: 3, maxPerRestock: 3 });
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 12, price: 7 });
   const players = [];
   for (let i = 0; i < 6; i++) {
     const p = await registerAccount(db, { username: `player${i}`, password: 'correct horse' });
@@ -312,7 +296,7 @@ test('the ledger, purchases and stock agree after a busy restock', async () => {
   for (const p of players) {
     const ledger = await findCoinTransactionsByUser(db, p.id);
     assert.equal(ledger.reduce((t, r) => t + r.amount, 0), await getBalance(db, p.id));
-    assert.ok((await countOwned(db, p.id, 'fizzing-pebble')) <= 3);
+    assert.equal((await countOwned(db, p.id, 'fizzing-pebble')), (await db.query('SELECT COALESCE(SUM(quantity), 0)::int AS n FROM shop_purchases WHERE user_id = $1', [p.id])).rows[0].n);
   }
 });
 

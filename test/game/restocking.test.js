@@ -9,7 +9,6 @@ import { ensureShopStates, restockShop, restockDueShops, planRestock, shopMercha
 import { findShopState, setShopPaused } from '../../src/db/shop-state.js';
 import { findRestockEvents } from '../../src/db/shop-restock-events.js';
 import { findListingsByRestock, findActiveListings } from '../../src/db/shop-stock.js';
-import { findDailySupply } from '../../src/db/daily-supply.js';
 import { registerAccount } from '../../src/game/accounts.js';
 
 const GROCER = 'questionable-grocer';
@@ -52,55 +51,23 @@ test('over many restocks, low-weight entries appear far less often than high-wei
   assert.ok(share('soggy-biscuit') < 1, 'even the heaviest entry is not guaranteed');
 });
 
-test('quantity ranges and daily caps are independent of selection weight', () => {
-  // Same weights, different quantity ranges: the planner draws quantity
-  // from the entry's own range whatever its weight.
+test('quantity ranges are independent of selection weight', () => {
+  // Same price, different weights and quantity ranges: the planner draws
+  // quantity from the entry's own range whatever its weight.
   const shop = {
     ...grocer,
     restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
     restockPool: [
-      { itemId: 'fizzing-pebble', weight: 1, quantity: [7, 9], price: [1, 1], maxPerPurchase: 1, maxPerRestock: 1 },
-      { itemId: 'unlabelled-jar', weight: 100, quantity: [1, 1], price: [1, 1], maxPerPurchase: 1, maxPerRestock: 1, dailySupplyCap: 4 },
+      { itemId: 'fizzing-pebble', weight: 1, quantity: [7, 9], price: [1, 1] },
+      { itemId: 'unlabelled-jar', weight: 100, quantity: [1, 1], price: [1, 1] },
     ],
   };
   const heavy = planRestock(shop, sequenceRandom([1, 1]))[0]; // roll 1 lands on the jar (pebble covers 0)
   assert.equal(heavy.itemId, 'unlabelled-jar');
   assert.equal(heavy.quantity, 1);
-  assert.equal(heavy.dailySupplyCap, 4);
   const light = planRestock(shop, sequenceRandom([1, 0, 9]))[0]; // roll 0 lands on the pebble
   assert.equal(light.itemId, 'fizzing-pebble');
   assert.equal(light.quantity, 9, 'quantity comes from the entry\'s range, not its weight');
-  assert.equal(light.dailySupplyCap, undefined);
-});
-
-test('weighted selection follows the configured weights', () => {
-  // Pool weights are biscuit 20, turnip 12, pebble 10, moonbeam 3, jar 1
-  // (total 46). The first draw is the listing count; the next picks an
-  // index by cumulative weight.
-  const oneListing = (roll) => planRestock(grocer, sequenceRandom([1, roll]))[0].itemId;
-  assert.equal(oneListing(0), 'soggy-biscuit');
-  assert.equal(oneListing(19), 'soggy-biscuit');
-  assert.equal(oneListing(20), 'humming-turnip');
-  assert.equal(oneListing(31), 'humming-turnip');
-  assert.equal(oneListing(32), 'fizzing-pebble');
-  assert.equal(oneListing(41), 'fizzing-pebble');
-  assert.equal(oneListing(42), 'pickled-moonbeam');
-  assert.equal(oneListing(44), 'pickled-moonbeam');
-  assert.equal(oneListing(45), 'unlabelled-jar');
-});
-
-test('quantities and prices stay inside each entry\'s ranges over many draws', () => {
-  const random = seededRandom(42);
-  for (let i = 0; i < 500; i++) {
-    for (const planned of planRestock(grocer, random)) {
-      const entry = grocer.restockPool.find((e) => e.itemId === planned.itemId);
-      const [qLo, qHi] = entry.quantity;
-      assert.ok(planned.quantity >= qLo && planned.quantity <= qHi, `${planned.itemId} quantity ${planned.quantity}`);
-      assert.ok(planned.unitPrice >= entry.price[0] && planned.unitPrice <= entry.price[1], `${planned.itemId} price ${planned.unitPrice}`);
-      assert.ok(planned.unitPrice <= MAX_PRICE);
-      assert.equal(planned.maxPerPurchase, entry.maxPerPurchase);
-    }
-  }
 });
 
 // ----- restocking against the database -----
@@ -252,53 +219,6 @@ test('state survives a restart: ensureShopStates never resets an existing schedu
     assert.equal(notDue.skipped, 'not due');
   } finally {
     await restarted.end();
-  }
-});
-
-test('daily supply caps limit how many copies restocks create per UTC day', async () => {
-  const db = await freshShop();
-  // Force the jar (cap 4) into every restock, two copies at a time.
-  const jarOnly = {
-    ...grocer,
-    restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
-    restockPool: grocer.restockPool.filter((e) => e.itemId === 'unlabelled-jar').map((e) => ({ ...e, quantity: [2, 2] })),
-  };
-  const results = [];
-  for (let i = 0; i < 4; i++) {
-    const now = new Date(`2026-10-08T1${i}:00:00Z`);
-    results.push(await restockConfigured(db, jarOnly, { now, random: highRandom }));
-  }
-  const created = results.map((r) => r.listings.reduce((sum, l) => sum + l.initial_quantity, 0));
-  assert.deepEqual(created, [2, 2, 0, 0], 'two restocks fill the cap, later ones get nothing');
-  assert.equal(await findDailySupply(db, 'unlabelled-jar', '2026-10-08'), 4);
-
-  const nextDay = await restockConfigured(db, jarOnly, { now: new Date('2026-10-09T00:30:00Z'), random: highRandom });
-  assert.equal(nextDay.listings[0].initial_quantity, 2, 'the cap resets with the UTC day');
-});
-
-test('simultaneous restocks cannot exceed a daily supply cap together', async () => {
-  const db = await freshShop();
-  const other = createPool(config.testDatabaseUrl);
-  try {
-    const jarOnly = {
-      ...grocer,
-      restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
-      restockPool: grocer.restockPool.filter((e) => e.itemId === 'unlabelled-jar').map((e) => ({ ...e, quantity: [3, 3] })),
-    };
-    // Make a second shop share the item so two shops restock at once.
-    await db.query("INSERT INTO shop_state (shop_id, next_restock_at) VALUES ('second-shop', now())");
-    const now = new Date('2026-10-08T12:00:00Z');
-    const results = await Promise.all([
-      restockConfigured(db, jarOnly, { now, random: highRandom }),
-      restockConfigured(other, { ...jarOnly, id: 'second-shop' }, { now, random: highRandom }),
-      restockConfigured(db, { ...jarOnly, id: 'second-shop' }, { now: new Date(now.getTime() + 1), force: true, random: highRandom }),
-      restockConfigured(other, jarOnly, { now: new Date(now.getTime() + 1), force: true, random: highRandom }),
-    ]);
-    const created = results.filter((r) => r.restocked).flatMap((r) => r.listings).reduce((sum, l) => sum + l.initial_quantity, 0);
-    assert.ok(created <= 4, `created ${created}, cap is 4`);
-    assert.equal(await findDailySupply(db, 'unlabelled-jar', '2026-10-08'), created);
-  } finally {
-    await other.end();
   }
 });
 

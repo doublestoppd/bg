@@ -49,7 +49,7 @@ test('buying charges the listing price, ignores a forged one, and redirects', as
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const turnip = await stocked(server, 'humming-turnip', { quantity: 6, price: 12, maxPerPurchase: 10, maxPerRestock: 20 });
+    const turnip = await stocked(server, 'humming-turnip', { quantity: 6, price: 12 });
     const { csrf, requestId, shownPrice } = await listingForm(server, turnip.id);
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
@@ -71,7 +71,7 @@ test('insufficient funds re-shows the shop with an error and no change', async (
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const turnip = await stocked(server, 'humming-turnip', { quantity: 10, price: 12, maxPerPurchase: 10, maxPerRestock: 20 });
+    const turnip = await stocked(server, 'humming-turnip', { quantity: 10, price: 12 });
     const { csrf, requestId, shownPrice } = await listingForm(server, turnip.id);
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
@@ -90,7 +90,7 @@ test('submitting the same form twice buys once', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const turnip = await stocked(server, 'humming-turnip', { quantity: 6, price: 12, maxPerPurchase: 10, maxPerRestock: 20 });
+    const turnip = await stocked(server, 'humming-turnip', { quantity: 6, price: 12 });
     const { csrf, requestId, shownPrice } = await listingForm(server, turnip.id);
     const buy = () => server.request('/shops/questionable-grocer/buy', {
       method: 'POST',

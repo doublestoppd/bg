@@ -41,22 +41,11 @@ CREATE TABLE shop_stock (
   unit_price         BIGINT  NOT NULL CHECK (unit_price BETWEEN 1 AND 1000000),
   initial_quantity   INTEGER NOT NULL CHECK (initial_quantity > 0),
   remaining_quantity INTEGER NOT NULL CHECK (remaining_quantity BETWEEN 0 AND initial_quantity),
-  max_per_purchase   INTEGER NOT NULL CHECK (max_per_purchase > 0),
-  max_per_account    INTEGER NOT NULL CHECK (max_per_account > 0),  -- per restock
   active             BOOLEAN NOT NULL DEFAULT true,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (restock_id, item_id)
 );
 CREATE INDEX shop_stock_active ON shop_stock (shop_id) WHERE active;
-
--- How many copies of an item restocks have created on each UTC day, for
--- entries with a dailySupplyCap. Counts creation, not ownership.
-CREATE TABLE daily_item_supply (
-  item_id          TEXT    NOT NULL REFERENCES items(id),
-  supply_date      DATE    NOT NULL,
-  quantity_created INTEGER NOT NULL DEFAULT 0 CHECK (quantity_created >= 0),
-  PRIMARY KEY (item_id, supply_date)
-);
 
 -- Every purchase points at the listing and restock it came from.
 ALTER TABLE shop_purchases

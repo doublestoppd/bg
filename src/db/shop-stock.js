@@ -2,13 +2,13 @@
 
 const STOCK_COLUMNS = `shop_stock.id, shop_stock.shop_id, shop_stock.restock_id, shop_stock.item_id,
   shop_stock.unit_price, shop_stock.initial_quantity, shop_stock.remaining_quantity,
-  shop_stock.max_per_purchase, shop_stock.max_per_account, shop_stock.active, shop_stock.created_at`;
+  shop_stock.active, shop_stock.created_at`;
 
-export async function insertListing(db, { shopId, restockId, itemId, unitPrice, quantity, maxPerPurchase, maxPerAccount }) {
+export async function insertListing(db, { shopId, restockId, itemId, unitPrice, quantity }) {
   const { rows } = await db.query(
-    `INSERT INTO shop_stock (shop_id, restock_id, item_id, unit_price, initial_quantity, remaining_quantity, max_per_purchase, max_per_account)
-     VALUES ($1, $2, $3, $4, $5, $5, $6, $7) RETURNING ${STOCK_COLUMNS}`,
-    [shopId, restockId, itemId, unitPrice, quantity, maxPerPurchase, maxPerAccount],
+    `INSERT INTO shop_stock (shop_id, restock_id, item_id, unit_price, initial_quantity, remaining_quantity)
+     VALUES ($1, $2, $3, $4, $5, $5) RETURNING ${STOCK_COLUMNS}`,
+    [shopId, restockId, itemId, unitPrice, quantity],
   );
   return rows[0];
 }

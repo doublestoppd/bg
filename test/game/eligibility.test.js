@@ -16,9 +16,8 @@ import { insertRestriction, liftRestrictions, findActiveRestriction } from '../.
 const GROCER = 'questionable-grocer';
 const newRequestId = () => crypto.randomUUID();
 
-// Plenty of cheap copies, one per purchase, so limits other than the one
-// under test never get in the way.
-const stockOne = (db, itemId) => stockOneListing(db, itemId, { quantity: 50, price: 1, maxPerPurchase: 1, maxPerRestock: 100 });
+// Plenty of cheap copies, so nothing but the rule under test gets in the way.
+const stockOne = (db, itemId) => stockOneListing(db, itemId, { quantity: 50, price: 1 });
 
 async function setup() {
   const { db, user } = await databaseWithPlayer();

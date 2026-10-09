@@ -63,36 +63,33 @@ Items have no rarity field, score or tier. An item is defined only by its
 identity, properties and behaviour (`src/game/items.js`). How scarce it
 is emerges from how it enters the game, and every one of those settings
 belongs to the thing that distributes it, today a shop and later an
-event, an exploration drop or a daily prize:
+event, an exploration drop or a daily prize. There are no per-purchase,
+per-account or per-day caps on a listing either: whoever reaches a
+listing first may buy all of it.
 
 | Dial | Where it is set | What it controls |
 |---|---|---|
 | **Restock probability** | `weight` on the shop's pool entry, together with how many listings a restock draws | How likely the item is to be picked for a restock, relative to the rest of that shop's pool. Weights are ratios, not percentages. Fewer listings per restock make low weights scarcer; a restock never draws more than half the pool, so nothing appears just because the pool is small. |
 | **Quantity per restock** | `quantity: [low, high]` on the entry | How many copies a listing starts with. Independent of the weight. |
 | **Current availability** | `shop_stock.remaining_quantity` | What is on the shelf right now, shared by everyone. |
-| **Overall supply** | `dailySupplyCap` on the entry, which shops carry the item at all, and the sum of past listings | How many copies can enter the world per UTC day, from where, and how many have. |
+| **Overall supply** | which shops carry the item at all, how often they restock, and the sum of past listings | Where copies can enter the world and how many have. |
 
 So the same item can be plentiful in one shop and almost never seen in
-another, or appear often but two at a time, or be capped at four a day
-however it is weighted. Players will work out what is scarce from what
+another, or appear often but two at a time. Players will work out what is scarce from what
 they see on the shelves and what others will trade for it; the game never
 tells them.
 
 ### How supply is measured
 
-A daily cap counts copies *created by restocks* on that UTC day across
-every shop, in `daily_item_supply`. It does not count copies already in
-players' inventories, and it does not count copies that were listed but
-never sold. "Supply" of an item overall is the sum of `initial_quantity`
-over its listings plus any other source that grants it (welcome gifts
-today, rewards later).
+"Supply" of an item overall is the sum of `initial_quantity` over its
+listings in `shop_stock` plus any other source that grants it (welcome
+gifts today, rewards later). Copies listed but never sold are not in
+anyone's hands but did enter the world; copies sold are in inventories.
 
 ## Limits
 
 | Limit | Default | Purpose |
 |---|---|---|
-| Copies per purchase | per entry | keeps one click from emptying a shelf |
-| Copies per account per listing | per entry (`maxPerRestock`) | spreads a restock across players |
 | Purchases per account per hour | 30 | blunts automated sweeping |
 | Stack size per item per player | 999 | keeps hoarding and numbers sane |
 | Purchase quantity ceiling | 99 | sanity bound above any entry's own |
@@ -119,7 +116,7 @@ today, rewards later).
 Change numbers in these places and restart:
 
 * starting coins and welcome items: `src/game/accounts.js`
-* prices, weights, quantities, caps: `src/game/shops.js`
+* prices, weights, quantities: `src/game/shops.js`
 * hourly purchase limit and rate limits: `src/game/shop-limits.js`
 * stack size and purchase ceiling: `src/game/inventory.js`,
   `src/game/purchases.js`
