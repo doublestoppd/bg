@@ -42,7 +42,8 @@ say() { printf '\n==> %s\n' "$*"; }
 # "402 Payment Required", and a source apt cannot read stops every later
 # apt-get update. Remove it wherever an earlier run or a manual attempt put it.
 remove_cloudsmith_caddy_source() {
-  grep -lis 'cloudsmith.io/public/caddy' /etc/apt/sources.list.d/* 2>/dev/null | xargs -r rm -f
+  # grep exits 1 when nothing matches, which `set -e` would treat as an error.
+  grep -lis 'cloudsmith.io/public/caddy' /etc/apt/sources.list.d/* 2>/dev/null | xargs -r rm -f || true
   rm -f /etc/apt/keyrings/caddy-stable-archive-keyring.gpg /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   if grep -qs 'cloudsmith.io/public/caddy' /etc/apt/sources.list; then
     sed -i '/cloudsmith.io\/public\/caddy/d' /etc/apt/sources.list
