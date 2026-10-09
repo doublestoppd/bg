@@ -176,7 +176,14 @@ cat > /etc/caddy/Caddyfile <<CADDY
 # certificate itself once the domain's DNS points at this server.
 $DOMAIN, www.$DOMAIN {
 	encode gzip
-	reverse_proxy 127.0.0.1:$APP_PORT
+	reverse_proxy 127.0.0.1:$APP_PORT {
+		# Node closes an idle connection after 5 seconds. Caddy must give up
+		# idle connections first, or it can reuse one Node is closing at the
+		# same moment and answer a request with 502 Bad Gateway.
+		transport http {
+			keepalive 4s
+		}
+	}
 }
 CADDY
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
