@@ -148,11 +148,11 @@ async function main() {
 
   // --- phase 2: rush for one copy ---
   const grocer = findShop(SHOP);
-  const rare = grocer.restockPool.find((e) => e.itemId === 'pickled-moonbeam');
+  const moonbeam = grocer.restockPool.find((e) => e.itemId === 'pickled-moonbeam');
   const scarce = await restockShopWithDefinition(pool, {
     ...grocer,
     restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
-    restockPool: [{ ...rare, quantity: [1, 1], price: [60, 60], maxPerPurchase: 1, maxPerRestock: 1, dailySupplyCap: undefined }],
+    restockPool: [{ ...moonbeam, quantity: [1, 1], price: [60, 60], maxPerPurchase: 1, maxPerRestock: 1, dailySupplyCap: undefined }],
   }, { force: true, triggeredBy: 'admin:load-test' });
   const listing = scarce.listings[0];
   const rushForms = await Promise.all(players.map(async (player) => ({ player, form: (await shopForms(player)).forms.find((f) => f.kind === 'listing' && f.id === String(listing.id)) })));

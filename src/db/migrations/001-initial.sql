@@ -47,7 +47,6 @@ CREATE TABLE items (
   name        TEXT    NOT NULL,
   description TEXT    NOT NULL,
   category    TEXT    NOT NULL,
-  rarity      TEXT    NOT NULL,
   image       TEXT,                         -- URL path, NULL until artwork exists
   effects     JSONB   NOT NULL,             -- e.g. {"hunger": 25}
   obtainable  BOOLEAN NOT NULL DEFAULT true,

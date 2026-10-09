@@ -4,7 +4,7 @@ import { resetDatabase, getTestPool } from '../helpers/test-database.js';
 import { lowRandom, highRandom, sequenceRandom, seededRandom } from '../helpers/fixed-random.js';
 import { createPool } from '../../src/db/pool.js';
 import config from '../../src/config.js';
-import { findShop, quantityRangeFor, MAX_PRICE } from '../../src/game/shops.js';
+import { findShop, MAX_PRICE } from '../../src/game/shops.js';
 import { ensureShopStates, restockShop, restockDueShops, planRestock, shopMerchandise } from '../../src/game/restocking.js';
 import { findShopState, setShopPaused } from '../../src/db/shop-state.js';
 import { findRestockEvents } from '../../src/db/shop-restock-events.js';
@@ -33,7 +33,7 @@ test('a plan has between listingsMin and listingsMax distinct entries, never the
   assert.equal(new Set(high.map((l) => l.itemId)).size, high.length, 'no item listed twice');
 });
 
-test('over many restocks, rare entries appear far less often than common ones', () => {
+test('over many restocks, low-weight entries appear far less often than high-weight ones, and none is guaranteed', () => {
   // Seeded, so this is exact and repeatable rather than statistical.
   const random = seededRandom(7);
   const appearances = { 'fizzing-pebble': 0, 'pickled-moonbeam': 0, 'unlabelled-jar': 0 };
@@ -47,8 +47,30 @@ test('over many restocks, rare entries appear far less often than common ones', 
   assert.ok(share('pickled-moonbeam') < 0.35, `moonbeam in ${share('pickled-moonbeam')} of restocks`);
   assert.ok(share('unlabelled-jar') < 0.15, `jar in ${share('unlabelled-jar')} of restocks`);
   assert.ok(share('unlabelled-jar') > 0.02, 'the jar does still appear');
-  assert.ok(share('fizzing-pebble') > 2 * share('pickled-moonbeam'), 'the rare food is much less common than the treat');
-  assert.ok(share('pickled-moonbeam') > 2 * share('unlabelled-jar'), 'and the curiosity rarer still');
+  assert.ok(share('fizzing-pebble') > 2 * share('pickled-moonbeam'), 'weight 10 appears far more than weight 3');
+  assert.ok(share('pickled-moonbeam') > 2 * share('unlabelled-jar'), 'and weight 3 far more than weight 1');
+  assert.ok(share('fizzing-pebble') < 1, 'even the heaviest entry is not guaranteed');
+});
+
+test('quantity ranges and daily caps are independent of selection weight', () => {
+  // Same weights, different quantity ranges: the planner draws quantity
+  // from the entry's own range whatever its weight.
+  const shop = {
+    ...grocer,
+    restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
+    restockPool: [
+      { itemId: 'fizzing-pebble', weight: 1, quantity: [7, 9], price: [1, 1], maxPerPurchase: 1, maxPerRestock: 1 },
+      { itemId: 'unlabelled-jar', weight: 100, quantity: [1, 1], price: [1, 1], maxPerPurchase: 1, maxPerRestock: 1, dailySupplyCap: 4 },
+    ],
+  };
+  const heavy = planRestock(shop, sequenceRandom([1, 1]))[0]; // roll 1 lands on the jar (pebble covers 0)
+  assert.equal(heavy.itemId, 'unlabelled-jar');
+  assert.equal(heavy.quantity, 1);
+  assert.equal(heavy.dailySupplyCap, 4);
+  const light = planRestock(shop, sequenceRandom([1, 0, 9]))[0]; // roll 0 lands on the pebble
+  assert.equal(light.itemId, 'fizzing-pebble');
+  assert.equal(light.quantity, 9, 'quantity comes from the entry\'s range, not its weight');
+  assert.equal(light.dailySupplyCap, undefined);
 });
 
 test('weighted selection follows the configured weights', () => {
@@ -67,7 +89,7 @@ test('quantities and prices stay inside each entry\'s ranges over many draws', (
   for (let i = 0; i < 500; i++) {
     for (const planned of planRestock(grocer, random)) {
       const entry = grocer.restockPool.find((e) => e.itemId === planned.itemId);
-      const [qLo, qHi] = quantityRangeFor(entry);
+      const [qLo, qHi] = entry.quantity;
       assert.ok(planned.quantity >= qLo && planned.quantity <= qHi, `${planned.itemId} quantity ${planned.quantity}`);
       assert.ok(planned.unitPrice >= entry.price[0] && planned.unitPrice <= entry.price[1], `${planned.itemId} price ${planned.unitPrice}`);
       assert.ok(planned.unitPrice <= MAX_PRICE);

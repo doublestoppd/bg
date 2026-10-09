@@ -143,7 +143,7 @@ test('repeated refused purchases pause buying, and each refusal is logged with i
   }
 });
 
-test('rare purchases are logged, essentials are always purchasable, and old log rows are pruned', async () => {
+test('successful purchases are recorded, not logged; essentials are always purchasable; old log rows are pruned', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
@@ -152,16 +152,24 @@ test('rare purchases are logged, essentials are always purchasable, and old log 
     const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: sequenceRandom([1, 10]) });
     const moonbeam = result.listings.find((l) => l.item_id === 'pickled-moonbeam');
     assert.ok(moonbeam, 'the restock contains the moonbeam');
-    await server.db.query('UPDATE shop_stock SET unit_price = 55 WHERE id = $1', [moonbeam.id]);
+    await server.db.query('UPDATE shop_stock SET unit_price = 55, remaining_quantity = 1 WHERE id = $1', [moonbeam.id]);
     const form = await listingForm(server, moonbeam.id);
     const bought = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
       form: { _csrf: form.csrf, request_id: form.requestId, listing: moonbeam.id, shown_price: form.shownPrice, quantity: '1' },
     });
     assert.equal(bought.status, 302);
-    const log = await findActivityByUser(server.db, userId);
-    assert.equal(log[0].kind, 'rare_purchase');
-    assert.equal(log[0].details.item, 'pickled-moonbeam');
+    assert.equal((await findActivityByUser(server.db, userId)).length, 0, 'a successful purchase is in shop_purchases, not the activity log');
+    const { rows } = await server.db.query('SELECT item_id FROM shop_purchases WHERE user_id = $1', [userId]);
+    assert.deepEqual(rows, [{ item_id: 'pickled-moonbeam' }]);
+
+    // A refused purchase (it is sold out now) does get logged.
+    const refused = await server.request('/shops/questionable-grocer/buy', {
+      method: 'POST',
+      form: { _csrf: form.csrf, request_id: 'bbbbbbbbbbbbbbbbbbbb', listing: moonbeam.id, shown_price: form.shownPrice, quantity: '1' },
+    });
+    assert.equal(refused.status, 400);
+    assert.equal((await findActivityByUser(server.db, userId))[0].kind, 'sold_out');
 
     // Essentials: no limits beyond the per-minute attempt allowance.
     const biscuit = await server.buyForm('questionable-grocer', 'soggy-biscuit');

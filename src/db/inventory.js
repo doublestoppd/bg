@@ -5,7 +5,7 @@
 export async function findInventoryByOwner(db, userId) {
   const { rows } = await db.query(
     `SELECT inventory.item_id, inventory.quantity,
-            items.name, items.description, items.category, items.rarity,
+            items.name, items.description, items.category,
             items.image, items.effects, items.retired, items.obtainable
      FROM inventory
      JOIN items ON items.id = inventory.item_id

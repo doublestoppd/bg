@@ -1,4 +1,4 @@
-import { findItem, RARITIES } from './items.js';
+import { findItem } from './items.js';
 
 // The shop catalog. Shops are run by the game (not by players). This file
 // is hand-edited design content, like species and items; live stock,
@@ -23,16 +23,17 @@ import { findItem, RARITIES } from './items.js';
 //                    only matter when a restock picks far fewer listings
 //                    than the pool holds, so restock.listingsMax may be at
 //                    most half the pool size (see validation below).
-//   quantity: [lo, hi]  pool, optional: copies per restock. Defaults by the
-//                    item's rarity to RARITY_QUANTITY_RANGES below.
+//   quantity: [lo, hi]  pool: copies per restock, drawn each time
 //   maxPerPurchase   most copies in one purchase
 //   maxPerRestock    pool: most copies one account may buy from one listing
 //   dailySupplyCap   pool, optional: most copies restocks may create across
 //                    all shops per UTC day
 //   eligibility      pool, optional: { minAccountAgeHours, requiresPet }
 //
-// Rarity is descriptive. It never sets a price or a weight; only the
-// default quantity range reads it, and an entry can override that.
+// Items have no rarity of their own. How scarce something is comes
+// entirely from these settings: its weight, its quantity range, which
+// shops carry it, and any daily cap. A very low weight makes an item
+// turn up seldom; a small quantity range makes it sell out fast.
 //
 // To add a shop, append an object and restart the server. To change a
 // price, edit the number. To stop selling something, remove its entry;
@@ -41,13 +42,6 @@ import { findItem, RARITIES } from './items.js';
 
 export const MAX_PRICE = 1_000_000;
 export const MAX_LISTING_QUANTITY = 999;
-
-// Default copies per restock when a pool entry gives no quantity range.
-export const RARITY_QUANTITY_RANGES = {
-  common: [4, 12],
-  uncommon: [2, 5],
-  rare: [1, 2],
-};
 
 const shops = [
   {
@@ -69,8 +63,8 @@ const shops = [
     // moonbeam (3) in 21%, the jar (1) in 7%. A restock may never draw
     // more than half the pool (validation enforces it), because once most
     // of the pool is drawn every time, the weights stop meaning anything
-    // and rare entries show up in every restock. Grow the pool before
-    // raising listingsMax.
+    // and low-weight entries show up in every restock. Grow the pool
+    // before raising listingsMax.
     restock: {
       minMinutes: 8,
       maxMinutes: 18,
@@ -82,11 +76,12 @@ const shops = [
       { itemId: 'humming-turnip', price: 12, maxPerPurchase: 10 },
     ],
     restockPool: [
-      { itemId: 'fizzing-pebble', weight: 10, price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
-      { itemId: 'pickled-moonbeam', weight: 3, price: [55, 80], maxPerPurchase: 1, maxPerRestock: 2 },
+      { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
+      { itemId: 'pickled-moonbeam', weight: 3, quantity: [1, 2], price: [55, 80], maxPerPurchase: 1, maxPerRestock: 2 },
       {
         itemId: 'unlabelled-jar',
         weight: 1,
+        quantity: [2, 5],
         price: [300, 450],
         maxPerPurchase: 1,
         maxPerRestock: 1,
@@ -124,11 +119,6 @@ function withItem(entry) {
   return entry ? { ...entry, item: findItem(entry.itemId) } : null;
 }
 
-// The quantity range a pool entry restocks with.
-export function quantityRangeFor(entry) {
-  return entry.quantity || RARITY_QUANTITY_RANGES[findItem(entry.itemId).rarity];
-}
-
 // Catches catalog mistakes at startup instead of in front of a player.
 function validateShops(list) {
   const seenShops = new Set();
@@ -155,11 +145,12 @@ function validateShops(list) {
     }
     // A restock that takes most of the pool makes the weights meaningless:
     // with three entries and two listings, every restock holds two of the
-    // three and a "rare" entry appears most of the time. So a restock may
-    // draw at most half the pool. Grow the pool before raising listingsMax.
+    // three and a low-weight entry appears most of the time. So a restock
+    // may draw at most half the pool. Grow the pool before raising
+    // listingsMax.
     const mostAllowed = Math.max(1, Math.floor(poolSize / 2));
     if (poolSize > 0 && r.listingsMax > mostAllowed) {
-      throw new Error(`${where}: restock.listingsMax (${r.listingsMax}) may be at most half the restock pool (${poolSize} entries, so at most ${mostAllowed}), or rare entries would appear in most restocks`);
+      throw new Error(`${where}: restock.listingsMax (${r.listingsMax}) may be at most half the restock pool (${poolSize} entries, so at most ${mostAllowed}), or low-weight entries would appear in most restocks`);
     }
 
     const seenItems = new Set();
@@ -185,7 +176,7 @@ function validateShops(list) {
       checkItem(entry);
       if (!isWholeNumber(entry.weight, 1)) throw new Error(`${where}: "${entry.itemId}" weight must be a positive whole number`);
       checkRange(entry.price, 1, MAX_PRICE, `${where}: "${entry.itemId}" price`);
-      if (entry.quantity !== undefined) checkRange(entry.quantity, 1, MAX_LISTING_QUANTITY, `${where}: "${entry.itemId}" quantity`);
+      checkRange(entry.quantity, 1, MAX_LISTING_QUANTITY, `${where}: "${entry.itemId}" quantity`);
       if (!isWholeNumber(entry.maxPerRestock, 1)) throw new Error(`${where}: "${entry.itemId}" needs maxPerRestock >= 1`);
       if (entry.dailySupplyCap !== undefined && !isWholeNumber(entry.dailySupplyCap, 1)) {
         throw new Error(`${where}: "${entry.itemId}" dailySupplyCap must be a positive whole number`);
@@ -197,9 +188,6 @@ function validateShops(list) {
         if (e.requiresPet !== undefined && typeof e.requiresPet !== 'boolean') throw new Error(`${where}: "${entry.itemId}" requiresPet must be true or false`);
       }
     }
-  }
-  for (const rarity of Object.keys(RARITY_QUANTITY_RANGES)) {
-    if (!RARITIES.includes(rarity)) throw new Error(`RARITY_QUANTITY_RANGES has unknown rarity "${rarity}"`);
   }
 }
 

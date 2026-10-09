@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { allShops, findShop, quantityRangeFor } from './shops.js';
+import { allShops, findShop } from './shops.js';
 import { findItem } from './items.js';
 import { essentialMaxQuantity, listingMaxQuantity } from './purchases.js';
 import { withTransaction } from '../db/pool.js';
@@ -47,7 +47,7 @@ export async function restockDueShops(pool, options = {}) {
 // Missed restocks: if the server was down past the scheduled time, the
 // shop is simply "due" and gets exactly one restock on the next tick, with
 // the following one scheduled from now. Missed restocks are never made up,
-// so downtime cannot flood the economy with rare items.
+// so downtime cannot flood the economy with scarce items.
 export async function restockShop(pool, shopId, options = {}) {
   const shop = findShop(shopId);
   if (!shop) throw new Error(`No shop "${shopId}"`);
@@ -118,7 +118,7 @@ export function planRestock(shop, random) {
   const chosen = [];
   while (chosen.length < wanted && pool.length > 0) {
     const entry = pool.splice(pickWeightedIndex(pool, random), 1)[0];
-    const [qLo, qHi] = quantityRangeFor(entry);
+    const [qLo, qHi] = entry.quantity;
     const [pLo, pHi] = entry.price;
     chosen.push({
       itemId: entry.itemId,

@@ -23,10 +23,10 @@ export async function deactivateListings(db, shopId) {
 // Current listings with the item definition attached, sold-out ones included.
 export async function findActiveListings(db, shopId) {
   const { rows } = await db.query(
-    `SELECT ${STOCK_COLUMNS}, items.name, items.description, items.rarity, items.category, items.image
+    `SELECT ${STOCK_COLUMNS}, items.name, items.description, items.category, items.image
      FROM shop_stock JOIN items ON items.id = shop_stock.item_id
      WHERE shop_stock.shop_id = $1 AND shop_stock.active
-     ORDER BY items.rarity DESC, items.name`,
+     ORDER BY items.name`,
     [shopId],
   );
   return rows;

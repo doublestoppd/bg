@@ -9,7 +9,7 @@ import { upsertItem, retireItemsNotIn } from '../db/items.js';
 // server (syncItemCatalog runs at startup). Rules:
 //   * id is a lowercase slug that never changes and is never reused, even
 //     after the item is removed. Player inventories refer to it.
-//   * category is one of CATEGORIES; rarity is one of RARITIES.
+//   * category is one of CATEGORIES.
 //   * image is a URL path such as '/images/items/soggy-biscuit.png', or
 //     null to show a placeholder until the artwork exists.
 //   * effects lists what happens to a pet when the item is used on it.
@@ -29,7 +29,6 @@ import { upsertItem, retireItemsNotIn } from '../db/items.js';
 // new item.
 
 export const CATEGORIES = ['food', 'curiosity'];
-export const RARITIES = ['common', 'uncommon', 'rare'];
 
 const items = [
   {
@@ -37,7 +36,6 @@ const items = [
     name: 'Soggy Biscuit',
     description: 'It was a biscuit once. Pets are not fussy.',
     category: 'food',
-    rarity: 'common',
     image: null,
     effects: { hunger: 15 },
   },
@@ -46,7 +44,6 @@ const items = [
     name: 'Humming Turnip',
     description: 'A turnip that hums quietly in B-flat. Filling, if unsettling.',
     category: 'food',
-    rarity: 'common',
     image: null,
     effects: { hunger: 25, happiness: 5 },
   },
@@ -55,7 +52,6 @@ const items = [
     name: 'Fizzing Pebble',
     description: 'Looks like a pebble, fizzes like a sweet. Snibbles hoard them.',
     category: 'food',
-    rarity: 'uncommon',
     image: null,
     effects: { hunger: 5, happiness: 20 },
   },
@@ -64,7 +60,6 @@ const items = [
     name: 'Pickled Moonbeam',
     description: 'A jar of moonlight, pickled. Tastes faintly of Tuesday.',
     category: 'food',
-    rarity: 'rare',
     image: null,
     effects: { hunger: 40, happiness: 15, health: 10 },
   },
@@ -73,7 +68,6 @@ const items = [
     name: 'Jubilee Crumpet',
     description: 'Baked for the opening of Blobgarden and handed out at the gate. No more are being made.',
     category: 'food',
-    rarity: 'rare',
     image: null,
     effects: { hunger: 30, happiness: 30 },
     obtainable: false,
@@ -83,7 +77,6 @@ const items = [
     name: 'Unlabelled Jar',
     description: 'A jar. Something inside is tapping. Best not opened yet.',
     category: 'curiosity',
-    rarity: 'uncommon',
     image: null,
     effects: {},
   },
@@ -125,7 +118,6 @@ function validateCatalog(list) {
     seen.add(item.id);
     if (!item.name || !item.description) throw new Error(`Item "${item.id}" needs a name and description`);
     if (!CATEGORIES.includes(item.category)) throw new Error(`Item "${item.id}" has unknown category "${item.category}"`);
-    if (!RARITIES.includes(item.rarity)) throw new Error(`Item "${item.id}" has unknown rarity "${item.rarity}"`);
     if (item.obtainable !== undefined && typeof item.obtainable !== 'boolean') {
       throw new Error(`Item "${item.id}" obtainable must be true or false`);
     }

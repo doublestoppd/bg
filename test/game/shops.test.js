@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allShops, findShop, findEssential, findPoolEntry, quantityRangeFor, RARITY_QUANTITY_RANGES, MAX_PRICE } from '../../src/game/shops.js';
+import { allShops, findShop, findEssential, findPoolEntry, MAX_PRICE, MAX_LISTING_QUANTITY } from '../../src/game/shops.js';
 import { findItem } from '../../src/game/items.js';
 
 test('the shop catalog is well formed', () => {
@@ -16,8 +16,9 @@ test('the shop catalog is well formed', () => {
     }
     for (const entry of shop.restockPool) {
       assert.ok(entry.price[0] <= entry.price[1] && entry.price[1] <= MAX_PRICE);
-      const [lo, hi] = quantityRangeFor(entry);
-      assert.ok(lo >= 1 && lo <= hi);
+      const [lo, hi] = entry.quantity;
+      assert.ok(lo >= 1 && lo <= hi && hi <= MAX_LISTING_QUANTITY, `${entry.itemId} declares its own quantity range`);
+      assert.ok(Number.isSafeInteger(entry.weight) && entry.weight >= 1, `${entry.itemId} declares its own weight`);
     }
   }
 });
@@ -34,10 +35,14 @@ test('essentials and pool entries are looked up per shop', () => {
   assert.equal(findPoolEntry('nowhere', 'fizzing-pebble'), null);
 });
 
-test('quantity ranges default by rarity unless the entry overrides them', () => {
-  assert.deepEqual(quantityRangeFor({ itemId: 'fizzing-pebble' }), RARITY_QUANTITY_RANGES.uncommon);
-  assert.deepEqual(quantityRangeFor({ itemId: 'pickled-moonbeam' }), RARITY_QUANTITY_RANGES.rare);
-  assert.deepEqual(quantityRangeFor({ itemId: 'pickled-moonbeam', quantity: [7, 9] }), [7, 9]);
+test('scarcity settings live on the shop entry, not the item', () => {
+  const pebble = findPoolEntry('questionable-grocer', 'fizzing-pebble');
+  assert.deepEqual(Object.keys(pebble).sort(), ['item', 'itemId', 'maxPerPurchase', 'maxPerRestock', 'price', 'quantity', 'weight']);
+  assert.equal('rarity' in pebble.item, false);
+  // Weights are relative: the pebble's 10 against the jar's 1 says nothing
+  // on its own about percentages, only about the ratio between them.
+  const jar = findPoolEntry('questionable-grocer', 'unlabelled-jar');
+  assert.equal(pebble.weight / jar.weight, 10);
 });
 
 test('a restock may draw at most half the pool, so weights always decide', async () => {

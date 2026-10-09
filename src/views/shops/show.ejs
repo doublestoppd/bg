@@ -14,7 +14,7 @@
 <h2 class="section-title">Always in stock</h2>
 <ul class="item-grid">
   <% for (const offer of essentials) { %>
-  <li class="item-box rarity-<%= offer.item.rarity %>">
+  <li class="item-box">
     <%- include('../partials/item-card-top', { item: offer.item }) %>
     <div class="price"><%= offer.price %> coins each</div>
     <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
@@ -40,7 +40,7 @@
 <% } else if (!paused) { %>
 <ul class="item-grid shelves" data-shop="<%= shop.id %>" data-restock="<%= currentRestockId %>">
   <% for (const listing of listings) { %>
-  <li class="item-box rarity-<%= listing.rarity %><%= listing.remaining_quantity === 0 ? ' sold-out' : '' %>" data-listing="<%= listing.id %>">
+  <li class="item-box<%= listing.remaining_quantity === 0 ? ' sold-out' : '' %>" data-listing="<%= listing.id %>">
     <%- include('../partials/item-card-top', { item: listing }) %>
     <div class="price"><%= listing.unit_price %> coins each</div>
     <% if (listing.remaining_quantity === 0) { %>

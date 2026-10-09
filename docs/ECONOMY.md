@@ -15,8 +15,8 @@ unusual to save up for. The two sides are kept apart on purpose:
 * **Essentials** (ordinary food) are always in stock at fixed, low prices
   with no eligibility rules. Nothing about scarcity ever touches them.
 * **Limited merchandise** appears in random restocks in limited quantity
-  at variable prices, is shared by every player, and sells out. Rarity,
-  price, probability and quantity are separate dials (below).
+  at variable prices, is shared by every player, and sells out. Price,
+  probability, quantity and supply are separate dials (below).
 
 Rare collectibles are desirable but never required for a healthy pet.
 
@@ -52,26 +52,30 @@ Rare collectibles are desirable but never required for a healthy pet.
 
 With a 100-coin purse and 5-coin biscuits, a new player can feed a pet
 twenty times before earning anything. Turnips at 12 are the "nice" food.
-Limited treats sit around 20, the rare food around 55 to 80, and the first
+Limited treats sit around 20, the moonbeam around 55 to 80, and the first
 curiosity at 300 to 450: a goal that takes saving. These are opening
 values to tune once rewards exist; see "Tuning" below.
 
-## Scarcity: five separate dials
+## Scarcity: four separate dials, none of them on the item
 
-These are deliberately not one property:
+Items have no rarity field, score or tier. An item is defined only by its
+identity, properties and behaviour (`src/game/items.js`). How scarce it
+is emerges from how it enters the game, and every one of those settings
+belongs to the thing that distributes it, today a shop and later an
+event, an exploration drop or a daily prize:
 
 | Dial | Where it is set | What it controls |
 |---|---|---|
-| **Rarity** | `rarity` on the item | A label players see. Nothing in shops reads it except the default quantity range. |
-| **Restock probability** | `weight` on the pool entry, together with how many listings a restock draws | How likely the item is to be picked for a restock, relative to the rest of that shop's pool. Fewer listings per restock make low weights rarer; a restock never draws the whole pool. |
-| **Quantity per restock** | `quantity: [low, high]` on the entry, else the rarity default | How many copies a listing starts with. |
+| **Restock probability** | `weight` on the shop's pool entry, together with how many listings a restock draws | How likely the item is to be picked for a restock, relative to the rest of that shop's pool. Weights are ratios, not percentages. Fewer listings per restock make low weights scarcer; a restock never draws more than half the pool, so nothing appears just because the pool is small. |
+| **Quantity per restock** | `quantity: [low, high]` on the entry | How many copies a listing starts with. Independent of the weight. |
 | **Current availability** | `shop_stock.remaining_quantity` | What is on the shelf right now, shared by everyone. |
-| **Overall supply** | `dailySupplyCap` on the entry, and the sum of past listings | How many copies can enter the world per UTC day, and how many have. |
+| **Overall supply** | `dailySupplyCap` on the entry, which shops carry the item at all, and the sum of past listings | How many copies can enter the world per UTC day, from where, and how many have. |
 
-So an item can be labelled rare but common in one shop's restocks, or
-labelled common but capped at four a day. The distribution is a property
-of the activity that distributes it, which today is the shop and later
-may be an exploration reward or a daily prize.
+So the same item can be plentiful in one shop and almost never seen in
+another, or appear often but two at a time, or be capped at four a day
+however it is weighted. Players will work out what is scarce from what
+they see on the shelves and what others will trade for it; the game never
+tells them.
 
 ### How supply is measured
 
@@ -118,13 +122,12 @@ Change numbers in these places and restart:
 * starting coins and welcome items: `src/game/accounts.js`
 * essential prices, pool prices, weights, quantities, caps:
   `src/game/shops.js`
-* default quantity by rarity: `RARITY_QUANTITY_RANGES` in the same file
 * hourly purchase limit and rate limits: `src/game/shop-limits.js`
 * stack size and purchase ceiling: `src/game/inventory.js`,
   `src/game/purchases.js`
 
 Watch the ledger and `shop_purchases` after a change: the ratio of coins
-entering (rewards) to coins leaving (purchases), and how long rare
+entering (rewards) to coins leaving (purchases), and how long low-weight
 listings last on the shelf, say whether prices and quantities are right.
 
 ## What is deliberately not here yet

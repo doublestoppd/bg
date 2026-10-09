@@ -1,11 +1,11 @@
 <%#
-  The top of an item box: picture, name, rarity and category, description.
+  The top of an item box: picture, name, category, description.
   Include it with: include('partials/item-card-top', { item, quantity, note })
-  `item` needs name, image, rarity, category and description. `quantity`
-  (optional) is shown after the name as "x3"; `note` (optional) is added to
-  the rarity line. The page adds whatever follows (price, forms).
+  `item` needs name, image, category and description. `quantity` (optional)
+  is shown after the name as "x3"; `note` (optional) is added to the
+  category line. The page adds whatever follows (price, forms).
 %>
 <%- include('picture', { src: item.image, alt: item.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
 <div class="item-name"><%= item.name %><% if (locals.quantity) { %> <span class="item-qty">&times;<%= quantity %></span><% } %></div>
-<div class="muted item-meta"><%= item.rarity %> <%= item.category %><% if (locals.note) { %> &middot; <%= note %><% } %></div>
+<div class="muted item-meta"><%= item.category %><% if (locals.note) { %> &middot; <%= note %><% } %></div>
 <div class="muted"><%= item.description %></div>

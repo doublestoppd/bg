@@ -89,9 +89,6 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
       shownPrice: Number(req.body.shown_price),
       requestId: req.body.request_id,
     });
-    if (!result.repeated && result.item.rarity === 'rare' && result.remaining !== null) {
-      await logShopActivity(db, { userId, ip: req.ip, kind: 'rare_purchase', shopId: shop.id, stockId: listingId, details: { item: result.item.id, quantity: result.quantity, unitPrice: result.unitPrice } });
-    }
     req.session.flash = { type: 'success', text: purchaseMessage(result) };
     res.redirect(`/shops/${shop.id}`);
   } catch (error) {

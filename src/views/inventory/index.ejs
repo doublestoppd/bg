@@ -8,7 +8,7 @@
 
 <ul class="item-grid inventory-grid">
   <% for (const item of items) { %>
-  <li class="item-box rarity-<%= item.rarity %>">
+  <li class="item-box">
     <%- include('../partials/item-card-top', { item, quantity: item.quantity, note: !item.retired && !item.obtainable ? 'no longer obtainable' : null }) %>
     <% if (item.retired) { %>
     <div class="muted item-meta">No longer found in <%= site.name %>. A keepsake.</div>

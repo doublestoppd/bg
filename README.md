@@ -51,6 +51,11 @@ This applies every file in `src/db/migrations` that has not been applied
 yet, in order. The server also runs it on startup, so a deploy that adds a
 migration needs no separate step. It is safe to run any number of times.
 
+Before launch the initial migration may still be revised rather than
+appended to. If a local database was created from an older version of it,
+reset that database (see below, and do the same for the test database by
+running the reset with `DATABASE_URL` set to your `TEST_DATABASE_URL`).
+
 ## Running the game
 
 ```

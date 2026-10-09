@@ -264,8 +264,6 @@ a:has(> .picture-placeholder) { text-decoration: none; }
 .item-meta { margin: 2px 0; }
 .item-action { margin-top: 6px; }
 .item-action select { width: auto; max-width: 60%; }
-.rarity-uncommon { border-color: #4e8a2a; }
-.rarity-rare { border-color: #7a3fc9; border-style: double; border-width: 3px; }
 
 .visually-hidden {
   position: absolute;

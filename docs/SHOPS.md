@@ -41,8 +41,8 @@ A shop is one object in the list in `src/game/shops.js`:
     { itemId: 'soggy-biscuit', price: 5, maxPerPurchase: 20 },
   ],
   restockPool: [
-    { itemId: 'fizzing-pebble', weight: 10, price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
-    { itemId: 'unlabelled-jar', weight: 1, price: [300, 450], maxPerPurchase: 1, maxPerRestock: 1,
+    { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
+    { itemId: 'unlabelled-jar', weight: 1, quantity: [2, 5], price: [300, 450], maxPerPurchase: 1, maxPerRestock: 1,
       dailySupplyCap: 4, eligibility: { minAccountAgeHours: 24, requiresPet: true } },
   ],
 }
@@ -71,15 +71,16 @@ Each restock draws a few entries from this list:
   weight among the entries not yet chosen. So `restock.listingsMax` may be
   at most half the pool size, and the server refuses to start otherwise:
   with three entries and two listings, every restock would hold two of the
-  three and a "rare" entry would appear most of the time. The further
-  `listingsMax` is below the pool size, the rarer a low-weight entry is.
+  three and a low-weight entry would appear most of the time. The further
+  `listingsMax` is below the pool size, the scarcer a low-weight entry is,
+  and nothing is ever guaranteed a place just because the pool is small.
   With the grocer's three entries and one listing per restock, the pebble
   (weight 10 of 14) appears in about 71% of restocks, the moonbeam (3) in
   21% and the jar (1) in 7%. Grow the pool before raising `listingsMax`.
 * `price: [low, high]`: each restock draws a price in this range.
-* `quantity: [low, high]` (optional): copies per restock. If absent, the
-  item's rarity picks a default from `RARITY_QUANTITY_RANGES`
-  (common 4 to 12, uncommon 2 to 5, rare 1 to 2).
+* `quantity: [low, high]`: copies per restock, drawn each time. Independent
+  of the weight: an item can be picked often but two at a time, or seldom
+  but a dozen at once.
 * `maxPerPurchase`: most copies in one purchase.
 * `maxPerRestock`: most copies one account may buy from one listing.
 * `dailySupplyCap` (optional): most copies all restocks together may
@@ -87,9 +88,11 @@ Each restock draws a few entries from this list:
 * `eligibility` (optional): who may buy. Currently `minAccountAgeHours`
   and `requiresPet`.
 
-Rarity is descriptive. Nothing in the shop system reads it except the
-default quantity range, and an entry can override that. Price and
-probability are always explicit per entry.
+Items carry no rarity. There is no field, score or tier anywhere in the
+game that says how rare something is; scarcity comes entirely from these
+entries (and from which shops list an item at all), so two shops can make
+the same item plentiful and scarce respectively. Price, probability,
+quantity and caps are always explicit per entry.
 
 ## How a restock works
 
@@ -279,17 +282,19 @@ and a plain message.
 every refused purchase with its kind (`sold_out`, `expired_listing`,
 `limit_exceeded`, `ineligible`, `restricted`, `price_changed`,
 `bad_request`), every rate-limit hit with the limit that fired, and every
-purchase of a rare item. Each row has the account, the client address, the
+administrator action. Each row has the account, the client address, the
 shop and listing, and a few details; nothing else about the visitor is
 collected. Rows are deleted after 30 days (`ACTIVITY_LOG_RETENTION_DAYS`)
 by the scheduler. Successful purchases are not logged here because
-`shop_purchases` already is the record.
+`shop_purchases` already is the record; to see who keeps acquiring a
+scarce listing, query `shop_purchases` by `stock_id` or use
+`shop-admin account <name>`.
 
 ### Multiple accounts
 
-Daily rewards, rare purchases and trading will tempt people to run several
-accounts. For now the limits above are per account and durable, rare
-acquisitions are logged, and restrictions are reviewable. What is
+Daily rewards, scarce purchases and trading will tempt people to run several
+accounts. For now the limits above are per account and durable, every
+purchase is recorded with its listing, and restrictions are reviewable. What is
 deliberately not done: identifying players by address, device
 fingerprinting, or automatic bans for buying fast. When trading arrives,
 the activity log and purchase records are the evidence to review before
@@ -306,7 +311,7 @@ established ones are the pattern to watch.
 | `daily_item_supply` | copies created per item per UTC day. |
 | `shop_purchases` | one row per purchase, pointing at its listing for limited stock. |
 | `shopping_restrictions` | administrator-imposed limited-stock bans, with reason, expiry and lifting. |
-| `shop_activity_log` | refused purchases, rate-limit hits and rare acquisitions, 30-day retention. |
+| `shop_activity_log` | refused purchases, rate-limit hits and administrator actions, 30-day retention. |
 | `request_counters` | fixed-window request counts for every rate limit. |
 
 ## Changing things by hand
@@ -326,12 +331,11 @@ until then.
   make low-weight entries rarer). An item cannot be made to appear in
   every restock through the pool; if it should always be available, make
   it an essential.
-* **Change quantities**: set `quantity: [low, high]` on the entry, or edit
-  `RARITY_QUANTITY_RANGES` to change the defaults for every entry without
-  its own range.
-* **Create rare merchandise**: a low `weight`, a small `quantity`, a high
+* **Change quantities**: edit `quantity: [low, high]` on the entry.
+* **Make something scarce**: a low `weight`, a small `quantity`, a high
   `price` range, `maxPerPurchase: 1`, and optionally a `dailySupplyCap` and
-  `eligibility`.
+  `eligibility`. There is no rarity label to set; the item becomes scarce
+  because it is distributed scarcely.
 * **Configure purchase limits**: `maxPerPurchase` and `maxPerRestock` on
   the entry; the hourly and rate limits in `src/game/shop-limits.js`.
 * **Configure account eligibility**: `eligibility: { minAccountAgeHours,
