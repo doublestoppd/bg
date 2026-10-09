@@ -50,6 +50,8 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 
 say "Installing system packages"
+# See the Caddy step: a broken third-party source from an earlier run would stop apt here.
+rm -f /etc/apt/sources.list.d/caddy-stable.list
 apt-get update -q
 apt-get install -y -q ca-certificates curl git gnupg ufw postgresql
 
@@ -64,13 +66,16 @@ fi
 node --version
 
 say "Installing Caddy"
+# Ubuntu ships Caddy in its own archive, which is all a reverse proxy with
+# automatic HTTPS needs. Caddy's third-party apt repository (Cloudsmith)
+# has refused downloads before, so an earlier attempt to add it is removed
+# here or every later apt-get update would fail.
+rm -f /etc/apt/sources.list.d/caddy-stable.list /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
 if ! command -v caddy >/dev/null; then
-  install -d -m 0755 /etc/apt/keyrings
-  curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --yes -o /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
-  curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -q
   apt-get install -y -q caddy
 fi
+caddy version
 
 say "Creating the $SERVICE_USER system user"
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
