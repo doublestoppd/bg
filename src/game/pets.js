@@ -95,8 +95,7 @@ export async function feedPet(pool, userId, { petId, itemId }) {
 
     await takeItem(db, userId, item.id, 1); // throws if the player has none
 
-    const changed = await updatePetStats(db, pet.id, userId, newStats);
-    if (changed !== 1) {
+    if (!(await updatePetStats(db, pet.id, userId, newStats))) {
       throw new Error(`Pet ${pet.id} could not be updated while feeding`);
     }
 

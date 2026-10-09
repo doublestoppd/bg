@@ -110,15 +110,17 @@ export function findShop(id) {
 // An essential the shop sells, with the item attached, or null.
 export function findEssential(shopId, itemId) {
   const shop = findShop(shopId);
-  const entry = shop && shop.essentials.find((e) => e.itemId === itemId);
-  return entry ? { ...entry, item: findItem(entry.itemId) } : null;
+  return withItem(shop && shop.essentials.find((e) => e.itemId === itemId));
 }
 
 // The pool configuration for an item in a shop, with the item attached,
 // or null. Used to read limits and eligibility for a stock listing.
 export function findPoolEntry(shopId, itemId) {
   const shop = findShop(shopId);
-  const entry = shop && shop.restockPool.find((e) => e.itemId === itemId);
+  return withItem(shop && shop.restockPool.find((e) => e.itemId === itemId));
+}
+
+function withItem(entry) {
   return entry ? { ...entry, item: findItem(entry.itemId) } : null;
 }
 

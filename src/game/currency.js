@@ -29,7 +29,7 @@ export async function getBalance(db, userId) {
 export async function spendCoins(db, userId, amount, details) {
   assertInTransaction(db, 'spendCoins');
   assertValidAmount(amount);
-  if ((await subtractCoins(db, userId, amount)) !== 1) {
+  if (!(await subtractCoins(db, userId, amount))) {
     throw new GameRuleError('You do not have enough coins.');
   }
   return recordChange(db, userId, -amount, details);
@@ -40,7 +40,7 @@ export async function spendCoins(db, userId, amount, details) {
 export async function awardCoins(db, userId, amount, details) {
   assertInTransaction(db, 'awardCoins');
   assertValidAmount(amount);
-  if ((await addCoins(db, userId, amount, MAX_COINS)) !== 1) {
+  if (!(await addCoins(db, userId, amount, MAX_COINS))) {
     throw new GameRuleError(`A purse cannot hold more than ${MAX_COINS} coins.`);
   }
   return recordChange(db, userId, amount, details);

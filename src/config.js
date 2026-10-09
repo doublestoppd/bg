@@ -23,7 +23,7 @@ const config = {
   // least one process must run it.
   schedulerEnabled: process.env.SCHEDULER_ENABLED !== 'false',
   // How often the scheduler checks whether any shop is due a restock.
-  restockCheckIntervalMs: Number(process.env.RESTOCK_CHECK_INTERVAL_MS) || 30 * 1000,
+  restockIntervalMs: Number(process.env.RESTOCK_CHECK_INTERVAL_MS) || 30 * 1000,
 };
 
 if (isProduction && config.sessionSecret === 'change-me-before-going-live') {

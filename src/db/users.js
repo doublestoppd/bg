@@ -7,13 +7,18 @@ export async function findUserById(db, id) {
   return rows[0] || null;
 }
 
-// Includes the password hash; only the login code should need this.
 // Usernames are matched ignoring case, like the unique index.
+export async function findUserByUsername(db, username) {
+  return findByUsername(db, username, USER_COLUMNS);
+}
+
+// The same row with the password hash; only the login code should need it.
 export async function findUserByUsernameWithPassword(db, username) {
-  const { rows } = await db.query(
-    `SELECT ${USER_COLUMNS}, password_hash FROM users WHERE lower(username) = lower($1)`,
-    [username],
-  );
+  return findByUsername(db, username, `${USER_COLUMNS}, password_hash`);
+}
+
+async function findByUsername(db, username, columns) {
+  const { rows } = await db.query(`SELECT ${columns} FROM users WHERE lower(username) = lower($1)`, [username]);
   return rows[0] || null;
 }
 
@@ -43,26 +48,21 @@ export async function findCoins(db, userId) {
   return rows.length ? rows[0].coins : null;
 }
 
-// Subtracts only if the balance covers it. Returns the number of rows
-// changed: 1 on success, 0 if the player could not afford it.
+// Subtracts only if the balance covers it. Returns true when it did, false
+// if the player could not afford it.
 export async function subtractCoins(db, userId, amount) {
   const result = await db.query(
     'UPDATE users SET coins = coins - $1 WHERE id = $2 AND coins >= $1',
     [amount, userId],
   );
-  return result.rowCount;
+  return result.rowCount === 1;
 }
 
-// Adds only if the result stays within maxCoins. Returns rows changed.
+// Adds only if the result stays within maxCoins. Returns true when it did.
 export async function addCoins(db, userId, amount, maxCoins) {
   const result = await db.query(
     'UPDATE users SET coins = coins + $1 WHERE id = $2 AND coins + $1 <= $3',
     [amount, userId, maxCoins],
   );
-  return result.rowCount;
-}
-
-export async function findUserByUsername(db, username) {
-  const { rows } = await db.query(`SELECT ${USER_COLUMNS} FROM users WHERE lower(username) = lower($1)`, [username]);
-  return rows[0] || null;
+  return result.rowCount === 1;
 }

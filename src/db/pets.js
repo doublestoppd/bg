@@ -35,12 +35,12 @@ export async function insertPet(db, { userId, name, species, hunger, happiness, 
 }
 
 // Writes new stat values. Filtering by owner as well as id means the
-// update silently does nothing (0 rows) if the pet is not theirs.
+// update does nothing (and returns false) if the pet is not theirs.
 export async function updatePetStats(db, petId, userId, { hunger, happiness, health }) {
   const result = await db.query(
     `UPDATE pets SET hunger = $1, happiness = $2, health = $3, updated_at = now()
      WHERE id = $4 AND user_id = $5`,
     [hunger, happiness, health, petId, userId],
   );
-  return result.rowCount;
+  return result.rowCount === 1;
 }

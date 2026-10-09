@@ -15,10 +15,7 @@
 <ul class="item-grid">
   <% for (const offer of essentials) { %>
   <li class="item-box rarity-<%= offer.item.rarity %>">
-    <%- include('../partials/picture', { src: offer.item.image, alt: offer.item.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
-    <div class="item-name"><%= offer.item.name %></div>
-    <div class="muted item-meta"><%= offer.item.rarity %> <%= offer.item.category %></div>
-    <div class="muted"><%= offer.item.description %></div>
+    <%- include('../partials/item-card-top', { item: offer.item }) %>
     <div class="price"><%= offer.price %> coins each</div>
     <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
       <%- include('../partials/csrf') %>
@@ -44,10 +41,7 @@
 <ul class="item-grid shelves" data-shop="<%= shop.id %>" data-restock="<%= currentRestockId %>">
   <% for (const listing of listings) { %>
   <li class="item-box rarity-<%= listing.rarity %><%= listing.remaining_quantity === 0 ? ' sold-out' : '' %>" data-listing="<%= listing.id %>">
-    <%- include('../partials/picture', { src: listing.image, alt: listing.name, cssClass: 'item-icon', width: 80, height: 80 }) %>
-    <div class="item-name"><%= listing.name %></div>
-    <div class="muted item-meta"><%= listing.rarity %> <%= listing.category %></div>
-    <div class="muted"><%= listing.description %></div>
+    <%- include('../partials/item-card-top', { item: listing }) %>
     <div class="price"><%= listing.unit_price %> coins each</div>
     <% if (listing.remaining_quantity === 0) { %>
     <div class="stock-count sold-out-label">Sold out</div>

@@ -76,15 +76,14 @@ function checkRequest({ shopId, itemId, listingId, quantity, shownPrice, request
     throw new GameRuleError('That purchase form was out of date. Please try again.', 'bad_request');
   }
   const hasItem = itemId !== undefined && itemId !== null && itemId !== '';
-  const listing = Number(listingId);
   const hasListing = listingId !== undefined && listingId !== null && listingId !== '';
   if (hasItem === hasListing) {
     throw new GameRuleError('Choose one thing to buy.', 'bad_request');
   }
-  if (hasListing && !Number.isSafeInteger(listing)) {
+  if (hasListing && !Number.isSafeInteger(Number(listingId))) {
     throw new GameRuleError(`${shop.name} does not sell that.`, 'bad_request');
   }
-  return { shop, itemId: hasItem ? String(itemId) : null, listingId: hasListing ? listing : null, quantity, shownPrice, requestId };
+  return { shop, itemId: hasItem ? String(itemId) : null, listingId: hasListing ? Number(listingId) : null, quantity, shownPrice, requestId };
 }
 
 async function runPurchase(db, userId, { shop, itemId, listingId, quantity, shownPrice, requestId }) {
@@ -125,7 +124,7 @@ async function runPurchase(db, userId, { shop, itemId, listingId, quantity, show
     unitPrice: offer.unitPrice, totalCost, idempotencyKey: requestId, requestHash,
     stockId: listingId, restockId: offer.restockId,
   });
-  if (listingId !== null && (await decrementListing(db, listingId, quantity)) !== 1) {
+  if (listingId !== null && !(await decrementListing(db, listingId, quantity))) {
     // Cannot happen while we hold the listing's lock, but the stock must
     // never be allowed to go negative whatever else changes.
     throw new GameRuleError(`${offer.item.name} has just sold out.`, 'sold_out');

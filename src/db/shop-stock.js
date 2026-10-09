@@ -49,12 +49,12 @@ export async function lockListing(db, stockId) {
 }
 
 // Takes copies off the shelf only if the listing is still active and has
-// enough. Returns rows changed (1 or 0), so the caller can tell.
+// enough. Returns true when it did.
 export async function decrementListing(db, stockId, quantity) {
   const result = await db.query(
     `UPDATE shop_stock SET remaining_quantity = remaining_quantity - $2
      WHERE id = $1 AND active AND remaining_quantity >= $2`,
     [stockId, quantity],
   );
-  return result.rowCount;
+  return result.rowCount === 1;
 }

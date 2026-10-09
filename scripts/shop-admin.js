@@ -30,7 +30,9 @@ const { values: options, positionals } = parseArgs({
   },
 });
 const [command, target] = positionals;
+// Options arrive as strings; undefined means "use the default".
 const number = (value, fallback) => (value === undefined ? fallback : Number(value));
+const limit = number(options.limit, undefined);
 
 const commands = {
   shops: async (pool) => table(await admin.listShops(pool)),
@@ -39,16 +41,16 @@ const commands = {
     console.log(state ? `paused: ${state.paused}, last restock: ${when(state.last_restock_at)}, next: ${when(state.next_restock_at)}, restock id: ${state.current_restock_id}` : 'no state row yet (server has not started)');
     table(listings.map((l) => ({ id: l.id, item: l.item_id, price: l.unit_price, remaining: `${l.remaining_quantity}/${l.initial_quantity}`, perPurchase: l.max_per_purchase, perAccount: l.max_per_account })));
   },
-  history: async (pool) => table(await admin.shopHistory(pool, need(target, 'shop'), number(options.limit, 20))),
-  purchases: async (pool) => table(await admin.shopPurchases(pool, need(target, 'shop'), number(options.limit, 50))),
+  history: async (pool) => table(await admin.shopHistory(pool, need(target, 'shop'), limit)),
+  purchases: async (pool) => table(await admin.shopPurchases(pool, need(target, 'shop'), limit)),
   account: async (pool) => {
-    const report = await admin.accountReport(pool, need(target, 'username'));
+    const report = await admin.accountReport(pool, need(target, 'username'), limit);
     console.log(`#${report.user.id} ${report.user.username}, ${report.user.coins} coins, registered ${when(report.user.created_at)}`);
     console.log('\nRestrictions:'); table(report.restrictions);
     console.log('\nPurchases:'); table(report.purchases.map((p) => ({ id: p.id, shop: p.shop_id, item: p.item_id, qty: p.quantity, price: p.unit_price, listing: p.stock_id, at: when(p.created_at) })));
     console.log('\nActivity:'); table(report.activity.map((a) => ({ at: when(a.created_at), kind: a.kind, shop: a.shop_id, listing: a.stock_id, ip: a.ip, details: JSON.stringify(a.details) })));
   },
-  suspicious: async (pool) => table((await admin.suspiciousAccounts(pool, number(options.hours, 24))).map((row) => ({ ...row, by_kind: JSON.stringify(row.by_kind) }))),
+  suspicious: async (pool) => table((await admin.suspiciousAccounts(pool, number(options.hours, 24), limit)).map((row) => ({ ...row, by_kind: JSON.stringify(row.by_kind) }))),
   pause: async (pool) => { await admin.pauseShop(pool, need(target, 'shop'), options.by); console.log(`Paused ${target}.`); },
   resume: async (pool) => { await admin.resumeShop(pool, need(target, 'shop'), options.by); console.log(`Resumed ${target}.`); },
   restock: async (pool) => {

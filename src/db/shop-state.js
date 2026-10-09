@@ -46,5 +46,5 @@ export async function setShopPaused(db, shopId, paused) {
     'UPDATE shop_state SET paused = $2, updated_at = now() WHERE shop_id = $1',
     [shopId, paused],
   );
-  return result.rowCount;
+  return result.rowCount === 1;
 }

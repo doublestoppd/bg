@@ -19,7 +19,14 @@ export async function listShops(pool) {
   const states = await allShopStates(pool);
   return allShops().map((shop) => {
     const state = states.find((s) => s.shop_id === shop.id) || null;
-    return { id: shop.id, name: shop.name, paused: state ? state.paused : null, lastRestockAt: state && state.last_restock_at, nextRestockAt: state && state.next_restock_at, currentRestockId: state && state.current_restock_id };
+    return {
+      id: shop.id,
+      name: shop.name,
+      paused: state ? state.paused : null,
+      lastRestockAt: state && state.last_restock_at,
+      nextRestockAt: state && state.next_restock_at,
+      currentRestockId: state && state.current_restock_id,
+    };
   });
 }
 
@@ -28,12 +35,13 @@ export async function shopStock(pool, shopId) {
   return { state: await findShopState(pool, shopId), listings: await findActiveListings(pool, shopId) };
 }
 
-export async function shopHistory(pool, shopId, limit = 20) {
+// `limit` is optional throughout; the db functions hold the defaults.
+export async function shopHistory(pool, shopId, limit) {
   requireShop(shopId);
   return findRestockEvents(pool, shopId, limit);
 }
 
-export async function shopPurchases(pool, shopId, limit = 50) {
+export async function shopPurchases(pool, shopId, limit) {
   requireShop(shopId);
   return findPurchasesByShop(pool, shopId, limit);
 }
@@ -74,7 +82,7 @@ export async function unrestrictAccount(pool, username, operator) {
 }
 
 // Everything worth reading about one account's shopping.
-export async function accountReport(pool, username, limit = 50) {
+export async function accountReport(pool, username, limit) {
   const user = await requireUser(pool, username);
   return {
     user,
@@ -85,7 +93,7 @@ export async function accountReport(pool, username, limit = 50) {
 }
 
 // Accounts with the most logged shop events in the last `hours`.
-export async function suspiciousAccounts(pool, hours = 24, limit = 20) {
+export async function suspiciousAccounts(pool, hours = 24, limit) {
   return findBusiestAccounts(pool, new Date(Date.now() - hours * 60 * 60 * 1000), limit);
 }
 

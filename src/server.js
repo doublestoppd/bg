@@ -13,7 +13,7 @@ await ensureShopStates(pool); // every catalog shop gets a schedule row (existin
 
 const app = createApp({ db: pool });
 const scheduler = config.schedulerEnabled
-  ? startScheduler(pool, { restockIntervalMs: config.restockCheckIntervalMs })
+  ? startScheduler(pool, { restockIntervalMs: config.restockIntervalMs })
   : { stop() {} };
 
 const server = app.listen(config.port, () => {
