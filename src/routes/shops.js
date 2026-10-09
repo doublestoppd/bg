@@ -78,12 +78,12 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
   }
 
   try {
-    // Only ids, the quantity, the price the player saw and the form's
-    // request id come from the browser. The real price is looked up inside
-    // purchaseItem, and the request id makes a resubmitted form harmless.
+    // Only the listing id, the quantity, the price the player saw and the
+    // form's request id come from the browser. The real price is read from
+    // the listing inside purchaseItem, and the request id makes a
+    // resubmitted form harmless.
     const result = await purchaseItem(db, userId, {
       shopId: shop.id,
-      itemId: req.body.item,
       listingId: req.body.listing,
       quantity: Number(req.body.quantity),
       shownPrice: Number(req.body.shown_price),
@@ -96,7 +96,7 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
       await incrementCounter(db, 'purchase-failed:user', String(userId), failedWindow);
       await logShopActivity(db, {
         userId, ip: req.ip, kind: refusalKind(error), shopId: shop.id, stockId: listingId,
-        details: { message: error.message, item: req.body.item || null, quantity: req.body.quantity },
+        details: { message: error.message, quantity: req.body.quantity },
       });
       return renderShop(req, res, shop, { status: 400, error: error.message }).catch(next);
     }
@@ -111,7 +111,6 @@ async function renderShop(req, res, shop, { status, error }) {
     shop,
     keeperLine: shop.keeper.lines[Math.floor(Math.random() * shop.keeper.lines.length)],
     // Each buy form gets its own random request id (see purchaseItem).
-    essentials: merchandise.essentials.map((offer) => ({ ...offer, requestId: crypto.randomUUID() })),
     listings: merchandise.listings.map((listing) => ({ ...listing, requestId: crypto.randomUUID() })),
     paused: merchandise.paused,
     restockMessage: restockMessage(shop, merchandise),
@@ -140,7 +139,7 @@ function purchaseMessage(result) {
   if (result.repeated) {
     return `That purchase of ${result.quantity} ${result.item.name} had already gone through.`;
   }
-  const shelf = result.remaining === null ? '' : result.remaining === 0 ? ' That was the last of them.' : ` ${result.remaining} left on the shelf.`;
+  const shelf = result.remaining === 0 ? ' That was the last of them.' : ` ${result.remaining} left on the shelf.`;
   return `You bought ${result.quantity} ${result.item.name} for ${result.totalCost} coins. You have ${result.balance} coins left.${shelf}`;
 }
 

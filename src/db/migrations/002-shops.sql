@@ -58,9 +58,8 @@ CREATE TABLE daily_item_supply (
   PRIMARY KEY (item_id, supply_date)
 );
 
--- Purchases of limited stock point at the listing they came from.
--- Essentials purchases leave both NULL.
+-- Every purchase points at the listing and restock it came from.
 ALTER TABLE shop_purchases
-  ADD COLUMN stock_id   BIGINT REFERENCES shop_stock(id),
-  ADD COLUMN restock_id BIGINT REFERENCES shop_restock_events(id);
+  ADD COLUMN stock_id   BIGINT NOT NULL REFERENCES shop_stock(id),
+  ADD COLUMN restock_id BIGINT NOT NULL REFERENCES shop_restock_events(id);
 CREATE INDEX shop_purchases_stock_user ON shop_purchases (stock_id, user_id);

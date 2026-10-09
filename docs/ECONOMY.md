@@ -10,13 +10,14 @@ restocks see `docs/SHOPS.md`; for the code layout see
 Blobgarden has a hybrid economy: easy, cheap pet care on one side, and
 scarce collectibles on the other. A player should never struggle to keep
 a pet fed and happy, and should always have something expensive and
-unusual to save up for. The two sides are kept apart on purpose:
-
-* **Essentials** (ordinary food) are always in stock at fixed, low prices
-  with no eligibility rules. Nothing about scarcity ever touches them.
-* **Limited merchandise** appears in random restocks in limited quantity
-  at variable prices, is shared by every player, and sells out. Price,
-  probability, quantity and supply are separate dials (below).
+unusual to save up for. Both come through the same mechanism: shop
+restocks put merchandise on shared shelves in limited quantities at
+variable prices, first come first served. Ordinary food is kept cheap and
+plentiful by its settings (a high weight so it is on the shelves most of
+the time, a large quantity range, a low price range, no eligibility
+rules); collectibles are made scarce by theirs. Price, probability,
+quantity and supply are separate dials (below), and new accounts start
+with a few items of food so nobody is stuck before their first restock.
 
 Rare collectibles are desirable but never required for a healthy pet.
 
@@ -41,17 +42,17 @@ Rare collectibles are desirable but never required for a healthy pet.
 * Items have no price of their own. A shop decides what it charges, so
   two shops may price the same item differently and a future player shop
   can price it however its owner likes.
-* Essentials have a fixed price per shop. Limited listings get a price
-  drawn from the entry's `[low, high]` range at each restock. Prices are
-  whole coins from 1 to 1,000,000 (`MAX_PRICE`).
+* Each listing gets a price drawn from the entry's `[low, high]` range at
+  each restock. Prices are whole coins from 1 to 1,000,000 (`MAX_PRICE`).
 * The price a player is shown is the price they pay. If it differs from
   the real one when they click Buy, the purchase is refused and they look
   again. Nothing from the browser is ever used as a price.
 
 ### Starting price points
 
-With a 100-coin purse and 5-coin biscuits, a new player can feed a pet
-twenty times before earning anything. Turnips at 12 are the "nice" food.
+With a 100-coin purse and biscuits at 4 to 6 coins, a new player can
+feed a pet about twenty times before earning anything. Turnips at 10 to
+14 are the "nice" food.
 Limited treats sit around 20, the moonbeam around 55 to 80, and the first
 curiosity at 300 to 450: a goal that takes saving. These are opening
 values to tune once rewards exist; see "Tuning" below.
@@ -92,12 +93,10 @@ today, rewards later).
 |---|---|---|
 | Copies per purchase | per entry | keeps one click from emptying a shelf |
 | Copies per account per listing | per entry (`maxPerRestock`) | spreads a restock across players |
-| Limited purchases per account per hour | 30 | blunts automated sweeping |
+| Purchases per account per hour | 30 | blunts automated sweeping |
 | Stack size per item per player | 999 | keeps hoarding and numbers sane |
 | Purchase quantity ceiling | 99 | sanity bound above any entry's own |
 | Purse | 1,000,000,000 | integer safety |
-
-Essentials have only the per-purchase limit.
 
 ## Integrity rules
 
@@ -120,8 +119,7 @@ Essentials have only the per-purchase limit.
 Change numbers in these places and restart:
 
 * starting coins and welcome items: `src/game/accounts.js`
-* essential prices, pool prices, weights, quantities, caps:
-  `src/game/shops.js`
+* prices, weights, quantities, caps: `src/game/shops.js`
 * hourly purchase limit and rate limits: `src/game/shop-limits.js`
 * stack size and purchase ceiling: `src/game/inventory.js`,
   `src/game/purchases.js`

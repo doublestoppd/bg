@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allShops, findShop, findEssential, findPoolEntry, MAX_PRICE, MAX_LISTING_QUANTITY } from '../../src/game/shops.js';
+import { allShops, findShop, findPoolEntry, MAX_PRICE, MAX_LISTING_QUANTITY } from '../../src/game/shops.js';
 import { findItem } from '../../src/game/items.js';
 
 test('the shop catalog is well formed', () => {
   const ids = allShops().map((shop) => shop.id);
   assert.equal(new Set(ids).size, ids.length);
   for (const shop of allShops()) {
-    assert.ok(shop.essentials.length + shop.restockPool.length > 0, `${shop.id} sells something`);
+    assert.ok(shop.restockPool.length > 0, `${shop.id} sells something`);
     assert.ok(shop.restock.minMinutes <= shop.restock.maxMinutes);
-    for (const entry of [...shop.essentials, ...shop.restockPool]) {
+    for (const entry of shop.restockPool) {
       const item = findItem(entry.itemId);
       assert.ok(item, `${shop.id} sells a real item (${entry.itemId})`);
       assert.ok(item.obtainable, `${entry.itemId} is still obtainable`);
@@ -23,15 +23,14 @@ test('the shop catalog is well formed', () => {
   }
 });
 
-test('essentials and pool entries are looked up per shop', () => {
+test('pool entries are looked up per shop', () => {
   assert.equal(findShop('questionable-grocer').keeper.name, 'Mungle');
   assert.equal(findShop('nowhere'), null);
-  const biscuit = findEssential('questionable-grocer', 'soggy-biscuit');
-  assert.equal(biscuit.price, 5);
+  const biscuit = findPoolEntry('questionable-grocer', 'soggy-biscuit');
+  assert.equal(biscuit.weight, 20);
   assert.equal(biscuit.item.name, 'Soggy Biscuit');
-  assert.equal(findEssential('questionable-grocer', 'fizzing-pebble'), null, 'limited stock is not an essential');
   assert.equal(findPoolEntry('questionable-grocer', 'fizzing-pebble').weight, 10);
-  assert.equal(findPoolEntry('questionable-grocer', 'soggy-biscuit'), null);
+  assert.equal(findPoolEntry('questionable-grocer', 'jubilee-crumpet'), null);
   assert.equal(findPoolEntry('nowhere', 'fizzing-pebble'), null);
 });
 
@@ -43,6 +42,9 @@ test('scarcity settings live on the shop entry, not the item', () => {
   // on its own about percentages, only about the ratio between them.
   const jar = findPoolEntry('questionable-grocer', 'unlabelled-jar');
   assert.equal(pebble.weight / jar.weight, 10);
+  // Ordinary food is simply the heaviest, most plentiful entry.
+  const biscuit = findPoolEntry('questionable-grocer', 'soggy-biscuit');
+  assert.ok(biscuit.weight > pebble.weight && biscuit.quantity[0] > pebble.quantity[1]);
 });
 
 test('a restock may draw at most half the pool, so weights always decide', async () => {

@@ -11,25 +11,6 @@
 <p><%= shop.description %></p>
 <p>You have <strong><%= currentUser.coins %></strong> coins.</p>
 
-<h2 class="section-title">Always in stock</h2>
-<ul class="item-grid">
-  <% for (const offer of essentials) { %>
-  <li class="item-box">
-    <%- include('../partials/item-card-top', { item: offer.item }) %>
-    <div class="price"><%= offer.price %> coins each</div>
-    <form method="post" action="/shops/<%= shop.id %>/buy" class="buy-form">
-      <%- include('../partials/csrf') %>
-      <input type="hidden" name="request_id" value="<%= offer.requestId %>">
-      <input type="hidden" name="item" value="<%= offer.item.id %>">
-      <input type="hidden" name="shown_price" value="<%= offer.price %>">
-      <label class="visually-hidden" for="qty-<%= offer.item.id %>">Quantity</label>
-      <input type="number" id="qty-<%= offer.item.id %>" name="quantity" value="1" min="1" max="<%= offer.maxQuantity %>" required>
-      <button type="submit">Buy</button>
-    </form>
-  </li>
-  <% } %>
-</ul>
-
 <h2 class="section-title">On the shelves today</h2>
 <p class="muted restock-message"><%= restockMessage %></p>
 <div class="notice notice-success shelves-changed" hidden>

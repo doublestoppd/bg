@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { allShops, findShop } from './shops.js';
-import { findItem } from './items.js';
-import { essentialMaxQuantity, listingMaxQuantity } from './purchases.js';
+import { listingMaxQuantity } from './purchases.js';
 import { withTransaction } from '../db/pool.js';
 import { ensureShopState, lockShopStateSkipLocked, recordRestock, findShopState } from '../db/shop-state.js';
 import { insertRestockEvent, setRestockListingCount, supersedeRestocks } from '../db/shop-restock-events.js';
@@ -144,9 +143,8 @@ function pickWeightedIndex(entries, random) {
   return entries.length - 1;
 }
 
-// What a visitor sees in a shop: the essentials (from the catalog) and the
-// current limited listings (from the database), each with the most a
-// purchase may take, plus whether a restock is coming. The exact time of
+// What a visitor sees in a shop: the current listings, each with the most
+// a purchase may take, plus whether a restock is coming. The exact time of
 // the next restock is deliberately not returned.
 export async function shopMerchandise(pool, shopId) {
   const shop = findShop(shopId);
@@ -154,7 +152,6 @@ export async function shopMerchandise(pool, shopId) {
   const state = await findShopState(pool, shopId);
   const listings = await findActiveListings(pool, shopId);
   return {
-    essentials: shop.essentials.map((entry) => ({ ...entry, item: findItem(entry.itemId), maxQuantity: essentialMaxQuantity(entry) })),
     listings: listings.map((listing) => ({ ...listing, maxQuantity: listingMaxQuantity(listing) })),
     currentRestockId: state ? state.current_restock_id : null,
     paused: state ? state.paused : false,

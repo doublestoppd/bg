@@ -51,7 +51,7 @@ src/
     accounts.js    registration, login, welcome purse and items
     species.js     adoptable creatures (design content)
     items.js       the item catalog (design content) and its sync
-    shops.js       the shop catalog: essentials and restock pools (design content)
+    shops.js       the shop catalog: each shop's restock pool (design content)
     restocking.js  restock scheduling and generation
     shop-limits.js every anti-abuse number in one place
     eligibility.js who may buy limited stock
@@ -292,9 +292,9 @@ browser refresh never repeats the feed.
 Routes never touch `users.coins`. Future rewards call `awardCoins` with
 their own reason.
 
-`purchaseItem` in `src/game/purchases.js` buys either an essential (fixed
-catalog price) or a limited listing from the current restock. Inside one
-transaction it locks the player's row, then the listing; checks it is
+`purchaseItem` in `src/game/purchases.js` buys from a listing in the
+current restock. Inside one transaction it locks the player's row, then
+the listing; checks it is
 live, in stock and within the per-purchase and per-restock limits; replays
 a repeated request id instead of buying twice; refuses if the price the
 player saw differs from the real one; then inserts the purchase, takes the

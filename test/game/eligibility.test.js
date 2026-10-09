@@ -29,8 +29,6 @@ async function setup() {
 
 const buy = (db, userId, listing, quantity = 1) =>
   purchaseItem(db, userId, { shopId: GROCER, listingId: listing.id, quantity, shownPrice: listing.unit_price, requestId: newRequestId() });
-const buyEssential = (db, userId) =>
-  purchaseItem(db, userId, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 1, shownPrice: 5, requestId: newRequestId() });
 
 test('a new account cannot buy high-value merchandise until it is old enough and has a pet', async () => {
   const { db, user } = await setup();
@@ -44,21 +42,21 @@ test('a new account cannot buy high-value merchandise until it is old enough and
   assert.equal(await countOwned(db, user.id, 'unlabelled-jar'), 1);
 });
 
-test('ordinary limited stock and essentials have no eligibility rules', async () => {
+test('ordinary merchandise has no eligibility rules', async () => {
   const { db, user } = await setup();
   const pebble = await stockOne(db, 'fizzing-pebble');
   await buy(db, user.id, pebble);
-  await buyEssential(db, user.id);
+  const biscuit = await stockOne(db, 'soggy-biscuit');
+  await buy(db, user.id, biscuit);
   assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 1);
+  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 4);
 });
 
-test('a restricted account cannot buy limited stock but can still buy essentials', async () => {
+test('a restricted account cannot buy from shops until the restriction is lifted', async () => {
   const { db, user } = await setup();
   const pebble = await stockOne(db, 'fizzing-pebble');
   await insertRestriction(db, { userId: user.id, reason: 'bought 40 moonbeams in a minute', createdBy: 'admin:keeper' });
   await assert.rejects(buy(db, user.id, pebble), /suspended: bought 40 moonbeams/);
-  await buyEssential(db, user.id);
-  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 4, 'food is always available');
 
   assert.equal(await liftRestrictions(db, user.id, 'admin:keeper'), 1);
   assert.equal(await findActiveRestriction(db, user.id), null);
@@ -87,10 +85,10 @@ test('restrictions and limits persist across a restart (a fresh pool over the sa
   }
 });
 
-test('an account may buy at most the hourly number of limited items, even with simultaneous requests', async () => {
+test('an account may buy at most the hourly number of times, even with simultaneous requests', async () => {
   const { db, user } = await setup();
   const pebble = await stockOne(db, 'fizzing-pebble');
-  const limit = SHOP_LIMITS.listingPurchasesPerHour;
+  const limit = SHOP_LIMITS.purchasesPerHour;
   const results = await Promise.allSettled(Array.from({ length: limit + 5 }, () => buy(db, user.id, pebble)));
   assert.equal(results.filter((r) => r.status === 'fulfilled').length, limit);
   const refused = results.find((r) => r.status === 'rejected');
@@ -101,9 +99,5 @@ test('an account may buy at most the hourly number of limited items, even with s
   await db.query("UPDATE shop_purchases SET created_at = created_at - interval '2 hours' WHERE user_id = $1", [user.id]);
   await buy(db, user.id, pebble);
   assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), limit + 1);
-
-  // Essentials are never counted against it.
-  await db.query("UPDATE shop_purchases SET created_at = now() WHERE user_id = $1", [user.id]);
-  await buyEssential(db, user.id);
-  assert.equal(await getBalance(db, user.id), 1100 - limit - 1 - 5);
+  assert.equal(await getBalance(db, user.id), 1100 - limit - 1);
 });

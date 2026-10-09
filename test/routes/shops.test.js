@@ -5,11 +5,17 @@ import { getBalance } from '../../src/game/currency.js';
 import { countOwned } from '../../src/game/inventory.js';
 import { ensureShopStates, restockShop, restockShopWithDefinition } from '../../src/game/restocking.js';
 import { findShop } from '../../src/game/shops.js';
+import { stockOne } from '../helpers/shop-fixtures.js';
 import { highRandom, lowRandom } from '../helpers/fixed-random.js';
 
 const GROCER = 'questionable-grocer';
-const buyForm = (server, itemId) => server.buyForm(GROCER, itemId);
 const listingForm = (server, listingId) => server.listingForm(GROCER, listingId);
+
+// Puts one fixed listing on the grocer's shelves and returns it.
+async function stocked(server, itemId, overrides) {
+  await ensureShopStates(server.db);
+  return stockOne(server.db, itemId, overrides);
+}
 
 test('guests are sent to the login page', async () => {
   const server = await startTestServer();
@@ -30,28 +36,29 @@ test('the directory and shop page show the balance and prices', async () => {
     assert.match(directory.text, /<strong>100<\/strong> coins/);
     const shop = await server.request('/shops/questionable-grocer');
     assert.match(shop.text, /Mungle:/);
-    assert.match(shop.text, /12 coins each/);
     assert.match(shop.text, /Coins: <strong>100<\/strong>/, 'purse in the menu');
     assert.match(shop.text, /shelves are bare/, 'no restock has happened yet');
+    assert.doesNotMatch(shop.text, /Always in stock/);
     assert.equal((await server.request('/shops/black-market')).status, 404);
   } finally {
     await server.close();
   }
 });
 
-test('buying charges the catalog price, ignores a forged one, and redirects', async () => {
+test('buying charges the listing price, ignores a forged one, and redirects', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const { csrf, requestId, shownPrice } = await buyForm(server, 'humming-turnip');
+    const turnip = await stocked(server, 'humming-turnip', { quantity: 6, price: 12, maxPerPurchase: 10, maxPerRestock: 20 });
+    const { csrf, requestId, shownPrice } = await listingForm(server, turnip.id);
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
-      form: { _csrf: csrf, request_id: requestId, item: 'humming-turnip', shown_price: shownPrice, quantity: '2', price: '1', total: '2' },
+      form: { _csrf: csrf, request_id: requestId, listing: turnip.id, shown_price: shownPrice, quantity: '2', price: '1', total: '2' },
     });
     assert.equal(submit.status, 302);
     assert.equal(submit.location, '/shops/questionable-grocer');
     const page = await server.request('/shops/questionable-grocer');
-    assert.match(page.text, /You bought 2 Humming Turnip for 24 coins\. You have 76 coins left\./);
+    assert.match(page.text, /You bought 2 Humming Turnip for 24 coins\. You have 76 coins left\. 4 left on the shelf\./);
     assert.match(page.text, /Coins: <strong>76<\/strong>/);
     assert.equal(await getBalance(server.db, userId), 76);
     assert.equal(await countOwned(server.db, userId, 'humming-turnip'), 3);
@@ -64,10 +71,11 @@ test('insufficient funds re-shows the shop with an error and no change', async (
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const { csrf, requestId, shownPrice } = await buyForm(server, 'humming-turnip');
+    const turnip = await stocked(server, 'humming-turnip', { quantity: 10, price: 12, maxPerPurchase: 10, maxPerRestock: 20 });
+    const { csrf, requestId, shownPrice } = await listingForm(server, turnip.id);
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
-      form: { _csrf: csrf, request_id: requestId, item: 'humming-turnip', shown_price: shownPrice, quantity: '9' },
+      form: { _csrf: csrf, request_id: requestId, listing: turnip.id, shown_price: shownPrice, quantity: '9' },
     });
     assert.equal(submit.status, 400);
     assert.match(submit.text, /not have enough coins/);
@@ -82,10 +90,11 @@ test('submitting the same form twice buys once', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const { csrf, requestId, shownPrice } = await buyForm(server, 'humming-turnip');
+    const turnip = await stocked(server, 'humming-turnip', { quantity: 6, price: 12, maxPerPurchase: 10, maxPerRestock: 20 });
+    const { csrf, requestId, shownPrice } = await listingForm(server, turnip.id);
     const buy = () => server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
-      form: { _csrf: csrf, request_id: requestId, item: 'humming-turnip', shown_price: shownPrice, quantity: '1' },
+      form: { _csrf: csrf, request_id: requestId, listing: turnip.id, shown_price: shownPrice, quantity: '1' },
     });
     const results = await Promise.all([buy(), buy()]);
     assert.deepEqual(results.map((r) => r.status), [302, 302], 'both are answered kindly');
@@ -93,10 +102,10 @@ test('submitting the same form twice buys once', async () => {
     assert.equal(await countOwned(server.db, userId, 'humming-turnip'), 2);
     assert.match((await server.request('/shops/questionable-grocer')).text, /had already gone through|You bought 1 Humming Turnip/);
 
-    const fresh = await buyForm(server, 'humming-turnip');
+    const fresh = await listingForm(server, turnip.id);
     const again = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
-      form: { _csrf: fresh.csrf, request_id: fresh.requestId, item: 'humming-turnip', shown_price: fresh.shownPrice, quantity: '1' },
+      form: { _csrf: fresh.csrf, request_id: fresh.requestId, listing: turnip.id, shown_price: fresh.shownPrice, quantity: '1' },
     });
     assert.equal(again.status, 302);
     assert.equal(await getBalance(server.db, userId), 76);
@@ -109,10 +118,11 @@ test('a request without a request id is refused', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    const { csrf } = await buyForm(server, 'soggy-biscuit');
+    const biscuit = await stocked(server, 'soggy-biscuit', { quantity: 10, price: 5 });
+    const { csrf, shownPrice } = await listingForm(server, biscuit.id);
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
-      form: { _csrf: csrf, item: 'soggy-biscuit', shown_price: '5', quantity: '1' },
+      form: { _csrf: csrf, listing: biscuit.id, shown_price: shownPrice, quantity: '1' },
     });
     assert.equal(submit.status, 400);
     assert.equal(await getBalance(server.db, userId), 100);
@@ -146,10 +156,7 @@ test('a player can buy a limited listing from the shelves, and it shows as sold 
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    await ensureShopStates(server.db);
-    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: lowRandom });
-    const listing = result.listings.find((l) => l.item_id === 'fizzing-pebble');
-    await server.db.query('UPDATE shop_stock SET remaining_quantity = 1, unit_price = 18 WHERE id = $1', [listing.id]);
+    const listing = await stocked(server, 'fizzing-pebble', { quantity: 1, price: 18 });
 
     const form = await listingForm(server, listing.id);
     assert.ok(form, 'the listing has a buy form');
@@ -172,9 +179,7 @@ test('a tampered shown price is refused with a clear message', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
-    await ensureShopStates(server.db);
-    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: lowRandom });
-    const listing = result.listings.find((l) => l.item_id === 'fizzing-pebble');
+    const listing = await stocked(server, 'fizzing-pebble');
     const form = await listingForm(server, listing.id);
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',

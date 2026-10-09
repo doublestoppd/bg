@@ -82,15 +82,14 @@ async function shopForms(player) {
   if (page.status !== 200) return { status: page.status, forms: [] };
   const csrf = (page.text.match(/name="_csrf" value="([^"]+)"/) || [])[1];
   const forms = [];
-  const re = /name="request_id" value="([^"]+)">\s*<input type="hidden" name="(item|listing)" value="([^"]+)">\s*<input type="hidden" name="shown_price" value="(\d+)">[\s\S]*?max="(\d+)"/g;
+  const re = /name="request_id" value="([^"]+)">\s*<input type="hidden" name="listing" value="([^"]+)">\s*<input type="hidden" name="shown_price" value="(\d+)">[\s\S]*?max="(\d+)"/g;
   let m;
-  while ((m = re.exec(page.text))) forms.push({ requestId: m[1], kind: m[2], id: m[3], price: Number(m[4]), max: Number(m[5]), csrf });
+  while ((m = re.exec(page.text))) forms.push({ requestId: m[1], id: m[2], price: Number(m[3]), max: Number(m[4]), csrf });
   return { status: 200, forms };
 }
 
 async function buy(player, form, quantity = 1) {
-  const body = { _csrf: form.csrf, request_id: form.requestId, shown_price: String(form.price), quantity: String(quantity) };
-  body[form.kind] = form.id;
+  const body = { _csrf: form.csrf, request_id: form.requestId, listing: form.id, shown_price: String(form.price), quantity: String(quantity) };
   const result = await player.request(`/shops/${SHOP}/buy`, { method: 'POST', form: body }, 'POST /shops/:id/buy');
   if (result.status === 302) stats.purchases.ok++;
   else if (result.status === 400 || result.status === 429) {
@@ -155,7 +154,7 @@ async function main() {
     restockPool: [{ ...moonbeam, quantity: [1, 1], price: [60, 60], maxPerPurchase: 1, maxPerRestock: 1, dailySupplyCap: undefined }],
   }, { force: true, triggeredBy: 'admin:load-test' });
   const listing = scarce.listings[0];
-  const rushForms = await Promise.all(players.map(async (player) => ({ player, form: (await shopForms(player)).forms.find((f) => f.kind === 'listing' && f.id === String(listing.id)) })));
+  const rushForms = await Promise.all(players.map(async (player) => ({ player, form: (await shopForms(player)).forms.find((f) => f.id === String(listing.id)) })));
   const rushStarted = performance.now();
   const rushResults = await Promise.all(rushForms.filter((r) => r.form).map(({ player, form }) => buy(player, form, 1)));
   const winners = rushResults.filter((s) => s === 302).length;

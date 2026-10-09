@@ -2,7 +2,7 @@
 
 const PURCHASE_COLUMNS = 'id, user_id, shop_id, item_id, quantity, unit_price, total_cost, idempotency_key, request_hash, stock_id, restock_id, created_at';
 
-export async function insertPurchase(db, { userId, shopId, itemId, quantity, unitPrice, totalCost, idempotencyKey, requestHash, stockId = null, restockId = null }) {
+export async function insertPurchase(db, { userId, shopId, itemId, quantity, unitPrice, totalCost, idempotencyKey, requestHash, stockId, restockId }) {
   const { rows } = await db.query(
     `INSERT INTO shop_purchases (user_id, shop_id, item_id, quantity, unit_price, total_cost, idempotency_key, request_hash, stock_id, restock_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ${PURCHASE_COLUMNS}`,
@@ -36,10 +36,10 @@ export async function sumPurchasedFromListing(db, userId, stockId) {
   return rows[0].total;
 }
 
-// Successful limited-stock purchases by an account since a point in time.
-export async function countListingPurchasesSince(db, userId, since) {
+// Successful purchases by an account since a point in time.
+export async function countPurchasesSince(db, userId, since) {
   const { rows } = await db.query(
-    'SELECT COUNT(*)::int AS n FROM shop_purchases WHERE user_id = $1 AND stock_id IS NOT NULL AND created_at >= $2',
+    'SELECT COUNT(*)::int AS n FROM shop_purchases WHERE user_id = $1 AND created_at >= $2',
     [userId, since],
   );
   return rows[0].n;

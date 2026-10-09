@@ -162,8 +162,8 @@ game entirely, delete its entry; owners keep it as a keepsake.
 
 ## Shops
 
-Shops live in `src/game/shops.js`: always-available essentials at fixed
-prices, plus a pool of limited merchandise that random restocks draw from.
+Shops live in `src/game/shops.js`: each shop has a pool of merchandise
+that random restocks draw from, with weights, quantities and prices.
 `docs/SHOPS.md` explains the configuration, how restocks and purchases
 work, the anti-abuse protections, and how to add a shop, change a price,
 or change how often something appears.

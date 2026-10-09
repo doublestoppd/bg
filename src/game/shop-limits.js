@@ -6,10 +6,8 @@
 // abuse getting through.
 
 export const SHOP_LIMITS = {
-  // Successful purchases of limited stock per account in any rolling hour.
-  // Essentials are not counted: they never sell out, so there is nothing to
-  // monopolise, and a player must always be able to feed their pets.
-  listingPurchasesPerHour: 30,
+  // Successful shop purchases per account in any rolling hour.
+  purchasesPerHour: 30,
 
   // Loading a shop page (browsing or refreshing).
   shopViewsPerMinutePerAccount: 60,

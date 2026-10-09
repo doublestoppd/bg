@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestServer } from '../helpers/test-server.js';
-import { lowRandom, sequenceRandom } from '../helpers/fixed-random.js';
+import { sequenceRandom } from '../helpers/fixed-random.js';
+import { stockOne } from '../helpers/shop-fixtures.js';
 import { createApp } from '../../src/app.js';
 import { ensureShopStates, restockShop } from '../../src/game/restocking.js';
 import { SHOP_LIMITS } from '../../src/game/shop-limits.js';
@@ -15,8 +16,7 @@ const listingForm = (server, listingId) => server.listingForm('questionable-groc
 
 async function stocked(server) {
   await ensureShopStates(server.db);
-  const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: lowRandom });
-  return result.listings.find((l) => l.item_id === 'fizzing-pebble');
+  return stockOne(server.db, 'fizzing-pebble');
 }
 
 test('shop page views are limited per account and the limit is logged', async () => {
@@ -143,13 +143,13 @@ test('repeated refused purchases pause buying, and each refusal is logged with i
   }
 });
 
-test('successful purchases are recorded, not logged; essentials are always purchasable; old log rows are pruned', async () => {
+test('successful purchases are recorded, not logged, and old log rows are pruned', async () => {
   const server = await startTestServer();
   try {
     const userId = await server.registerAndLogIn('wobble');
     await ensureShopStates(server.db);
-    // One listing, the roll landing on the moonbeam (cumulative weights: pebble 0-9, moonbeam 10-12, jar 13).
-    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: sequenceRandom([1, 10]) });
+    // One listing, the roll landing on the moonbeam (cumulative weights: biscuit 0-19, turnip 20-31, pebble 32-41, moonbeam 42-44, jar 45).
+    const result = await restockShop(server.db, 'questionable-grocer', { force: true, random: sequenceRandom([1, 42]) });
     const moonbeam = result.listings.find((l) => l.item_id === 'pickled-moonbeam');
     assert.ok(moonbeam, 'the restock contains the moonbeam');
     await server.db.query('UPDATE shop_stock SET unit_price = 55, remaining_quantity = 1 WHERE id = $1', [moonbeam.id]);
@@ -170,14 +170,6 @@ test('successful purchases are recorded, not logged; essentials are always purch
     });
     assert.equal(refused.status, 400);
     assert.equal((await findActivityByUser(server.db, userId))[0].kind, 'sold_out');
-
-    // Essentials: no limits beyond the per-minute attempt allowance.
-    const biscuit = await server.buyForm('questionable-grocer', 'soggy-biscuit');
-    const food = await server.request('/shops/questionable-grocer/buy', {
-      method: 'POST',
-      form: { _csrf: biscuit.csrf, request_id: biscuit.requestId, item: 'soggy-biscuit', shown_price: biscuit.shownPrice, quantity: '2' },
-    });
-    assert.equal(food.status, 302);
 
     await server.db.query("UPDATE shop_activity_log SET created_at = now() - interval '31 days'");
     assert.equal(await pruneActivityLog(server.db), 1);

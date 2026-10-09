@@ -36,20 +36,20 @@ test('a plan has between listingsMin and listingsMax distinct entries, never the
 test('over many restocks, low-weight entries appear far less often than high-weight ones, and none is guaranteed', () => {
   // Seeded, so this is exact and repeatable rather than statistical.
   const random = seededRandom(7);
-  const appearances = { 'fizzing-pebble': 0, 'pickled-moonbeam': 0, 'unlabelled-jar': 0 };
+  const appearances = {};
   const RESTOCKS = 2000;
   for (let i = 0; i < RESTOCKS; i++) {
-    for (const planned of planRestock(grocer, random)) appearances[planned.itemId]++;
+    for (const planned of planRestock(grocer, random)) appearances[planned.itemId] = (appearances[planned.itemId] || 0) + 1;
   }
-  const share = (id) => appearances[id] / RESTOCKS;
-  // Weights 10 : 3 : 1 and one listing per restock give about 71% : 21% : 7%.
-  assert.ok(share('fizzing-pebble') > 0.6, `pebble in ${share('fizzing-pebble')} of restocks`);
-  assert.ok(share('pickled-moonbeam') < 0.35, `moonbeam in ${share('pickled-moonbeam')} of restocks`);
-  assert.ok(share('unlabelled-jar') < 0.15, `jar in ${share('unlabelled-jar')} of restocks`);
-  assert.ok(share('unlabelled-jar') > 0.02, 'the jar does still appear');
-  assert.ok(share('fizzing-pebble') > 2 * share('pickled-moonbeam'), 'weight 10 appears far more than weight 3');
-  assert.ok(share('pickled-moonbeam') > 2 * share('unlabelled-jar'), 'and weight 3 far more than weight 1');
-  assert.ok(share('fizzing-pebble') < 1, 'even the heaviest entry is not guaranteed');
+  const share = (id) => (appearances[id] || 0) / RESTOCKS;
+  // Weights 20 : 12 : 10 : 3 : 1 with one or two listings per restock.
+  assert.ok(share('soggy-biscuit') > share('humming-turnip'), 'biscuit (20) above turnip (12)');
+  assert.ok(share('humming-turnip') > share('fizzing-pebble'), 'turnip (12) above pebble (10)');
+  assert.ok(share('fizzing-pebble') > 2 * share('pickled-moonbeam'), 'pebble (10) far above moonbeam (3)');
+  assert.ok(share('pickled-moonbeam') > 2 * share('unlabelled-jar'), 'moonbeam (3) far above jar (1)');
+  assert.ok(share('unlabelled-jar') < 0.1, `jar in ${share('unlabelled-jar')} of restocks`);
+  assert.ok(share('unlabelled-jar') > 0.01, 'the jar does still appear');
+  assert.ok(share('soggy-biscuit') < 1, 'even the heaviest entry is not guaranteed');
 });
 
 test('quantity ranges and daily caps are independent of selection weight', () => {
@@ -74,14 +74,19 @@ test('quantity ranges and daily caps are independent of selection weight', () =>
 });
 
 test('weighted selection follows the configured weights', () => {
-  // Pool weights are pebble 10, moonbeam 3, jar 1 (total 14). The first
-  // draw is the listing count; the next picks an index by cumulative weight.
+  // Pool weights are biscuit 20, turnip 12, pebble 10, moonbeam 3, jar 1
+  // (total 46). The first draw is the listing count; the next picks an
+  // index by cumulative weight.
   const oneListing = (roll) => planRestock(grocer, sequenceRandom([1, roll]))[0].itemId;
-  assert.equal(oneListing(0), 'fizzing-pebble');
-  assert.equal(oneListing(9), 'fizzing-pebble');
-  assert.equal(oneListing(10), 'pickled-moonbeam');
-  assert.equal(oneListing(12), 'pickled-moonbeam');
-  assert.equal(oneListing(13), 'unlabelled-jar');
+  assert.equal(oneListing(0), 'soggy-biscuit');
+  assert.equal(oneListing(19), 'soggy-biscuit');
+  assert.equal(oneListing(20), 'humming-turnip');
+  assert.equal(oneListing(31), 'humming-turnip');
+  assert.equal(oneListing(32), 'fizzing-pebble');
+  assert.equal(oneListing(41), 'fizzing-pebble');
+  assert.equal(oneListing(42), 'pickled-moonbeam');
+  assert.equal(oneListing(44), 'pickled-moonbeam');
+  assert.equal(oneListing(45), 'unlabelled-jar');
 });
 
 test('quantities and prices stay inside each entry\'s ranges over many draws', () => {

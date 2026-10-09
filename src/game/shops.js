@@ -4,31 +4,27 @@ import { findItem } from './items.js';
 // is hand-edited design content, like species and items; live stock,
 // schedules and history live in PostgreSQL (see docs/SHOPS.md).
 //
-// Each shop has two kinds of merchandise:
-//
-//   essentials   always in stock at a fixed price, unlimited, available to
-//                everyone. Ordinary food belongs here.
-//   restockPool  the limited merchandise. Each restock picks a few entries
-//                from this pool by weight, gives each a quantity and a
-//                price drawn from its ranges, and the listings are shared
-//                by every player until they sell out or the next restock
-//                replaces them.
+// Everything a shop sells comes through restocks. Each restock picks a
+// few entries from the shop's restockPool by weight, gives each a quantity
+// and a price drawn from its ranges, and the listings are shared by every
+// player until they sell out or the next restock replaces them. Something
+// that should be on the shelves most of the time simply gets a high
+// weight and a large quantity range.
 //
 // Entry fields:
 //   itemId           an id from src/game/items.js (must be obtainable)
-//   price            essentials: the fixed price
-//   price: [lo, hi]  pool: each restock draws a price in this range
-//   weight           pool: relative chance of being picked (any positive
-//                    whole number; 10 is twice as likely as 5). Weights
-//                    only matter when a restock picks far fewer listings
-//                    than the pool holds, so restock.listingsMax may be at
-//                    most half the pool size (see validation below).
-//   quantity: [lo, hi]  pool: copies per restock, drawn each time
+//   weight           relative chance of being picked (any positive whole
+//                    number; 10 is twice as likely as 5). Weights only
+//                    matter when a restock picks far fewer listings than
+//                    the pool holds, so restock.listingsMax may be at most
+//                    half the pool size (see validation below).
+//   quantity: [lo, hi]  copies per restock, drawn each time
+//   price: [lo, hi]  each restock draws a price in this range
 //   maxPerPurchase   most copies in one purchase
-//   maxPerRestock    pool: most copies one account may buy from one listing
-//   dailySupplyCap   pool, optional: most copies restocks may create across
-//                    all shops per UTC day
-//   eligibility      pool, optional: { minAccountAgeHours, requiresPet }
+//   maxPerRestock    most copies one account may buy from one listing
+//   dailySupplyCap   optional: most copies restocks may create across all
+//                    shops per UTC day
+//   eligibility      optional: { minAccountAgeHours, requiresPet }
 //
 // Items have no rarity of their own. How scarce something is comes
 // entirely from these settings: its weight, its quantity range, which
@@ -58,24 +54,21 @@ const shops = [
         'No refunds. No questions. No sudden movements.',
       ],
     },
-    // One listing per restock while the pool has only three entries: the
-    // pebble (weight 10 of 14) appears in about 71% of restocks, the
-    // moonbeam (3) in 21%, the jar (1) in 7%. A restock may never draw
-    // more than half the pool (validation enforces it), because once most
-    // of the pool is drawn every time, the weights stop meaning anything
-    // and low-weight entries show up in every restock. Grow the pool
-    // before raising listingsMax.
+    // One or two listings per restock from a pool of five. A restock may
+    // never draw more than half the pool (validation enforces it), because
+    // once most of the pool is drawn every time, the weights stop meaning
+    // anything and low-weight entries show up in every restock. Grow the
+    // pool before raising listingsMax. With these weights (total 46) the
+    // biscuit is on the shelves most of the time, the jar seldom.
     restock: {
       minMinutes: 8,
       maxMinutes: 18,
       listingsMin: 1,
-      listingsMax: 1,
+      listingsMax: 2,
     },
-    essentials: [
-      { itemId: 'soggy-biscuit', price: 5, maxPerPurchase: 20 },
-      { itemId: 'humming-turnip', price: 12, maxPerPurchase: 10 },
-    ],
     restockPool: [
+      { itemId: 'soggy-biscuit', weight: 20, quantity: [8, 15], price: [4, 6], maxPerPurchase: 20, maxPerRestock: 40 },
+      { itemId: 'humming-turnip', weight: 12, quantity: [4, 8], price: [10, 14], maxPerPurchase: 10, maxPerRestock: 20 },
       { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
       { itemId: 'pickled-moonbeam', weight: 3, quantity: [1, 2], price: [55, 80], maxPerPurchase: 1, maxPerRestock: 2 },
       {
@@ -102,20 +95,11 @@ export function findShop(id) {
   return shops.find((shop) => shop.id === id) || null;
 }
 
-// An essential the shop sells, with the item attached, or null.
-export function findEssential(shopId, itemId) {
-  const shop = findShop(shopId);
-  return withItem(shop && shop.essentials.find((e) => e.itemId === itemId));
-}
-
 // The pool configuration for an item in a shop, with the item attached,
 // or null. Used to read limits and eligibility for a stock listing.
 export function findPoolEntry(shopId, itemId) {
   const shop = findShop(shopId);
-  return withItem(shop && shop.restockPool.find((e) => e.itemId === itemId));
-}
-
-function withItem(entry) {
+  const entry = shop && shop.restockPool.find((e) => e.itemId === itemId);
   return entry ? { ...entry, item: findItem(entry.itemId) } : null;
 }
 
@@ -140,9 +124,8 @@ function validateShops(list) {
       throw new Error(`${where}: restock.listingsMin and listingsMax must be whole numbers with min <= max`);
     }
     const poolSize = (shop.restockPool || []).length;
-    if (poolSize > 0 && r.listingsMax < 1) {
-      throw new Error(`${where}: restock.listingsMax must be at least 1 when the pool is not empty`);
-    }
+    if (poolSize === 0) throw new Error(`${where} has nothing in its restock pool`);
+    if (r.listingsMax < 1) throw new Error(`${where}: restock.listingsMax must be at least 1`);
     // A restock that takes most of the pool makes the weights meaningless:
     // with three entries and two listings, every restock holds two of the
     // three and a low-weight entry appears most of the time. So a restock
@@ -154,7 +137,7 @@ function validateShops(list) {
     }
 
     const seenItems = new Set();
-    const checkItem = (entry) => {
+    for (const entry of shop.restockPool) {
       const item = findItem(entry.itemId);
       if (!item) throw new Error(`${where} sells unknown item "${entry.itemId}"`);
       if (!item.obtainable) throw new Error(`${where} sells "${entry.itemId}", which is no longer obtainable`);
@@ -163,17 +146,6 @@ function validateShops(list) {
       if (!isWholeNumber(entry.maxPerPurchase, 1) || entry.maxPerPurchase > MAX_LISTING_QUANTITY) {
         throw new Error(`${where}: "${entry.itemId}" needs maxPerPurchase from 1 to ${MAX_LISTING_QUANTITY}`);
       }
-    };
-
-    for (const entry of shop.essentials || []) {
-      checkItem(entry);
-      if (!isWholeNumber(entry.price, 1) || entry.price > MAX_PRICE) {
-        throw new Error(`${where}: essential "${entry.itemId}" price must be a whole number from 1 to ${MAX_PRICE}`);
-      }
-    }
-
-    for (const entry of shop.restockPool || []) {
-      checkItem(entry);
       if (!isWholeNumber(entry.weight, 1)) throw new Error(`${where}: "${entry.itemId}" weight must be a positive whole number`);
       checkRange(entry.price, 1, MAX_PRICE, `${where}: "${entry.itemId}" price`);
       checkRange(entry.quantity, 1, MAX_LISTING_QUANTITY, `${where}: "${entry.itemId}" quantity`);

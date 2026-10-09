@@ -6,10 +6,10 @@ import { stockOne } from '../helpers/shop-fixtures.js';
 import { createPool, withTransaction } from '../../src/db/pool.js';
 import config from '../../src/config.js';
 import { registerAccount } from '../../src/game/accounts.js';
-import { purchaseItem } from '../../src/game/purchases.js';
+import { purchaseItem, MAX_PURCHASE_QUANTITY } from '../../src/game/purchases.js';
 import { ensureShopStates } from '../../src/game/restocking.js';
 import { getBalance, awardCoins } from '../../src/game/currency.js';
-import { countOwned } from '../../src/game/inventory.js';
+import { countOwned, grantItem, MAX_STACK_SIZE } from '../../src/game/inventory.js';
 import { findCoinTransactionsByUser } from '../../src/db/coin-transactions.js';
 import { findPurchasesByUser } from '../../src/db/shop-purchases.js';
 import { findActiveListings, findListingsByRestock } from '../../src/db/shop-stock.js';
@@ -87,6 +87,8 @@ test('4. and 5. unknown shops, unknown listings, and listings of another shop ar
   await assert.rejects(purchaseItem(db, user.id, { shopId: 'black-market', listingId: listing.id, quantity: 1, shownPrice: 20, requestId: newRequestId() }), /no such shop/);
   await assert.rejects(buy(db, user.id, { id: 999999, unit_price: 20 }, 1), /does not sell that/);
   await assert.rejects(buy(db, user.id, { id: 'abc', unit_price: 20 }, 1), /does not sell that/);
+  await assert.rejects(buy(db, user.id, { id: undefined, unit_price: 20 }, 1), /does not sell that/);
+  await assert.rejects(buy(db, user.id, { id: '', unit_price: 20 }, 1), /does not sell that/);
   await db.query("INSERT INTO shop_state (shop_id, next_restock_at) VALUES ('other-shop', now())");
   await db.query("UPDATE shop_stock SET shop_id = 'other-shop' WHERE id = $1", [listing.id]);
   await assert.rejects(buy(db, user.id, listing, 1), /does not sell that/, 'a listing that belongs to another shop');
@@ -118,11 +120,38 @@ test('7. a forged or stale shown price is refused and never charged', async () =
 test('8. quantity must be valid and within the listing\'s per-purchase limit', async () => {
   const { db, user } = await setup();
   const listing = await stockOne(db, 'fizzing-pebble', { quantity: 10, price: 5, maxPerPurchase: 3, maxPerRestock: 10 });
-  for (const quantity of [0, -1, 1.5, '2', NaN, undefined]) {
+  for (const quantity of [0, -1, 1.5, '2', NaN, Infinity, MAX_PURCHASE_QUANTITY + 1, undefined]) {
     await assert.rejects(buy(db, user.id, listing, quantity), GameRuleError, String(quantity));
   }
   await assert.rejects(buy(db, user.id, listing, 4), /at most 3 Fizzing Pebble at a time/);
+  for (const requestId of [undefined, '', 'short', 'has spaces in it here', 42]) {
+    await assert.rejects(buy(db, user.id, listing, 1, { requestId }), /out of date/, String(requestId));
+  }
+  for (const shownPrice of [undefined, 0, -5, 1.5, '5']) {
+    await assert.rejects(buy(db, user.id, listing, 1, { shownPrice }), /out of date/, String(shownPrice));
+  }
   assert.equal((await remaining(db, listing)).remaining_quantity, 10);
+});
+
+test('a full stack rolls the coins, the stock and the purchase record back', async () => {
+  const { db, user } = await setup();
+  await withTransaction(db, (tx) => awardCoins(tx, user.id, 10_000, { reason: 'reward' }));
+  await grantItem(db, user.id, 'fizzing-pebble', MAX_STACK_SIZE);
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 5, price: 1 });
+  const before = await snapshot(db, user.id, listing);
+  await assert.rejects(buy(db, user.id, listing, 1), /cannot carry more/);
+  assert.deepEqual(await snapshot(db, user.id, listing), before);
+});
+
+test('simultaneous purchases stop exactly when the coins run out', async () => {
+  const { db, user } = await setup();
+  const listing = await stockOne(db, 'soggy-biscuit', { quantity: 100, price: 5, maxPerPurchase: 1, maxPerRestock: 100 });
+  const results = await Promise.allSettled(Array.from({ length: 30 }, () => buy(db, user.id, listing, 1)));
+  assert.equal(results.filter((r) => r.status === 'fulfilled').length, 20, '100 coins buys twenty 5-coin biscuits');
+  for (const r of results.filter((r) => r.status === 'rejected')) assert.ok(r.reason instanceof GameRuleError);
+  assert.equal(await getBalance(db, user.id), 0);
+  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 23);
+  assert.equal((await remaining(db, listing)).remaining_quantity, 80);
 });
 
 test('9. per-account per-restock limits hold, even under simultaneous requests', async () => {
@@ -266,19 +295,6 @@ test('19. a restock that replaces a listing waits for a purchase in flight, and 
   }
 });
 
-test('20. essentials stay available whatever the shelves are doing', async () => {
-  const { db, user } = await setup();
-  const essential = (itemId, price) => purchaseItem(db, user.id, { shopId: GROCER, itemId, quantity: 1, shownPrice: price, requestId: newRequestId() });
-  await essential('soggy-biscuit', 5); // no restock has happened
-  const listing = await stockOne(db, 'pickled-moonbeam', { quantity: 1, price: 60, maxPerPurchase: 1, maxPerRestock: 1 });
-  await buy(db, user.id, listing, 1); // sold out now
-  await essential('soggy-biscuit', 5);
-  await stockOne(db, 'fizzing-pebble'); // replaced again
-  await essential('humming-turnip', 12);
-  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 5);
-  assert.equal(await countOwned(db, user.id, 'humming-turnip'), 2);
-});
-
 test('the ledger, purchases and stock agree after a busy restock', async () => {
   const { db } = await setup();
   const listing = await stockOne(db, 'fizzing-pebble', { quantity: 12, price: 7, maxPerPurchase: 3, maxPerRestock: 3 });
@@ -374,17 +390,4 @@ test('concurrent retries of one request for the last copy charge once and grant 
   } finally {
     await other.end();
   }
-});
-
-test('a retry of a completed essentials purchase is also answered with the original', async () => {
-  const { db, user } = await setup();
-  const requestId = newRequestId();
-  const essential = (shownPrice) => purchaseItem(db, user.id, { shopId: GROCER, itemId: 'soggy-biscuit', quantity: 3, shownPrice, requestId });
-  const first = await essential(5);
-  const retry = await essential(5);
-  assert.equal(retry.repeated, true);
-  assert.equal(retry.purchaseId, first.purchaseId);
-  assert.equal(await getBalance(db, user.id), 85);
-  assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 6);
-  await assert.rejects(essential(6), /already used for something else/);
 });

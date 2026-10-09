@@ -2,8 +2,8 @@
 -- Rate-limit counters already live in request_counters (migration 001),
 -- and per-account purchase limits are counted from shop_purchases.
 
--- A shopping restriction stops an account buying limited stock (essentials
--- stay available so pets can still be fed). Imposed and lifted by an
+-- A shopping restriction stops an account buying from shops. Imposed and
+-- lifted by an
 -- administrator through the shop-admin utility, always with a reason, so
 -- every restriction can be reviewed.
 CREATE TABLE shopping_restrictions (

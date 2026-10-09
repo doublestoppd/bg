@@ -6,12 +6,14 @@ specialist.
 
 ## The idea
 
-Shops work like the classic early-2000s pet-site shops. Each shop always
-has a few **essentials** at fixed prices, and every so often it **restocks**:
-a random assortment of limited merchandise appears on the shelves at
-random prices, shared by every player, first come first served, until it
-sells out or the next restock replaces it. There is no haggling, no lottery
-and no reservation: whoever's purchase commits first gets the item.
+Shops work like the classic early-2000s pet-site shops. Every so often a
+shop **restocks**: a random assortment of merchandise appears on the
+shelves at random prices and in limited quantities, shared by every
+player, first come first served, until it sells out or the next restock
+replaces it. Everything a shop sells arrives this way; ordinary food is
+simply weighted to appear most of the time and stocked in large numbers.
+There is no haggling, no lottery and no reservation: whoever's purchase
+commits first gets the item.
 
 ## Where things live
 
@@ -36,11 +38,9 @@ A shop is one object in the list in `src/game/shops.js`:
   description: 'Groceries of uncertain provenance ...',
   headerImage: null,                    // '/images/shops/questionable-grocer.png' when you have it
   keeper: { name: 'Mungle', image: null, lines: ['Everything is fresh. Define fresh.'] },
-  restock: { minMinutes: 8, maxMinutes: 18, listingsMin: 1, listingsMax: 1 },
-  essentials: [
-    { itemId: 'soggy-biscuit', price: 5, maxPerPurchase: 20 },
-  ],
+  restock: { minMinutes: 8, maxMinutes: 18, listingsMin: 1, listingsMax: 2 },
   restockPool: [
+    { itemId: 'soggy-biscuit', weight: 20, quantity: [8, 15], price: [4, 6], maxPerPurchase: 20, maxPerRestock: 40 },
     { itemId: 'fizzing-pebble', weight: 10, quantity: [2, 5], price: [18, 24], maxPerPurchase: 3, maxPerRestock: 5 },
     { itemId: 'unlabelled-jar', weight: 1, quantity: [2, 5], price: [300, 450], maxPerPurchase: 1, maxPerRestock: 1,
       dailySupplyCap: 4, eligibility: { minAccountAgeHours: 24, requiresPet: true } },
@@ -53,15 +53,10 @@ mistake (unknown item, unobtainable item, an item listed twice, a price or
 range out of bounds), so errors surface immediately rather than in front
 of a player.
 
-### Essentials
-
-Always available, unlimited, fixed price, no eligibility rules. Ordinary
-food belongs here so a brand-new player can always feed a pet. The only
-limit is `maxPerPurchase`.
-
 ### The restock pool
 
-Each restock draws a few entries from this list:
+Everything the shop sells is in this list, and each restock draws a few
+entries from it:
 
 * `weight`: relative chance of being picked. Any positive whole number;
   an entry with weight 10 is twice as likely as one with weight 5. Weights
@@ -74,9 +69,9 @@ Each restock draws a few entries from this list:
   three and a low-weight entry would appear most of the time. The further
   `listingsMax` is below the pool size, the scarcer a low-weight entry is,
   and nothing is ever guaranteed a place just because the pool is small.
-  With the grocer's three entries and one listing per restock, the pebble
-  (weight 10 of 14) appears in about 71% of restocks, the moonbeam (3) in
-  21% and the jar (1) in 7%. Grow the pool before raising `listingsMax`.
+  With the grocer's five entries, one or two listings per restock and
+  weights of 20, 12, 10, 3 and 1, the biscuit is on the shelves most of
+  the time and the jar seldom. Grow the pool before raising `listingsMax`.
 * `price: [low, high]`: each restock draws a price in this range.
 * `quantity: [low, high]`: copies per restock, drawn each time. Independent
   of the weight: an item can be picked often but two at a time, or seldom
@@ -131,9 +126,8 @@ outage cannot flood the economy.
 ### Replacement
 
 The next restock replaces the previous assortment entirely, sold or not.
-Essentials are unaffected. Old listings, old events and every purchase
-record stay in the database for history; they are only marked inactive or
-superseded.
+Old listings, old events and every purchase record stay in the database
+for history; they are only marked inactive or superseded.
 
 ### Daily supply caps
 
@@ -146,13 +140,12 @@ under the cap. The day boundary is midnight UTC.
 ## Buying
 
 Players click Buy on a shop page and either get the item or a plain
-message saying why not. There is one purchase function for everything,
-`purchaseItem` in `src/game/purchases.js`, used for essentials and for
-limited listings alike.
+message saying why not. There is one purchase function, `purchaseItem` in
+`src/game/purchases.js`.
 
 ### What the form sends
 
-* `item` (an essential's id) **or** `listing` (a `shop_stock` id)
+* `listing` (a `shop_stock` id)
 * `quantity`
 * `shown_price`: the unit price printed on the page. It is not trusted as
   a price; it is compared with the real one, and if they differ the
@@ -161,16 +154,17 @@ limited listings alike.
 * `request_id`: a random id the page printed into that form. See
   "Repeated submissions".
 
-The real price comes from the catalog (essentials) or the listing row.
+The real price comes from the listing row, which was drawn at restock
+time from the entry's price range.
 
 ### The transaction, step by step
 
 1. Lock the player's row (`SELECT ... FOR UPDATE`). This account's
    purchases now run one at a time.
-2. For a listing: lock the listing row. It must belong to this shop, be
-   active (not replaced by a later restock), have enough copies, and the
-   quantity must respect `maxPerPurchase` and, counting what this account
-   already bought from it, `maxPerRestock`.
+2. Lock the listing row. It must belong to this shop, be active (not
+   replaced by a later restock), have enough copies, and the quantity must
+   respect `maxPerPurchase` and, counting what this account already bought
+   from it, `maxPerRestock`.
 3. If this `request_id` was already used by this account, return that
    purchase (if it was for the same thing) or refuse (if not).
 4. Compare the shown price with the real one.
@@ -196,7 +190,7 @@ commits first wins.
 ### Repeated submissions
 
 Every buy form carries a fresh random `request_id`. The purchase row
-stores it, with a hash of shop, item or listing, quantity and shown price,
+stores it, with a hash of shop, listing, quantity and shown price,
 under a unique constraint per account. A double-click, a browser retry, or
 a resent form therefore returns the first purchase instead of making a
 second; the same id sent with different details is refused. Because the
@@ -236,19 +230,14 @@ With the player's row locked, so simultaneous requests cannot slip past:
 |---|---|---|
 | Copies per purchase | per entry (`maxPerPurchase`) | catalog |
 | Copies per account per listing | per entry (`maxPerRestock`) | catalog, counted from `shop_purchases` |
-| Limited-stock purchases per account per hour | 30 | `listingPurchasesPerHour`, counted from `shop_purchases` |
+| Purchases per account per hour | 30 | `purchasesPerHour`, counted from `shop_purchases` |
 
-Essentials are not counted against the hourly limit: they never sell out,
-so there is nothing to monopolise, and a player must always be able to
-feed their pets.
+### Eligibility
 
-### Eligibility (limited stock only)
-
-* Any account with a **shopping restriction** in force cannot buy limited
-  stock. Essentials remain available. Restrictions are imposed and lifted
-  by an administrator with a reason, can carry an expiry, and are listed
-  in `shopping_restrictions` so every one can be reviewed. They are never
-  imposed automatically.
+* Any account with a **shopping restriction** in force cannot buy from
+  shops. Restrictions are imposed and lifted by an administrator with a
+  reason, can carry an expiry, and are listed in `shopping_restrictions`
+  so every one can be reviewed. They are never imposed automatically.
 * A pool entry may declare `eligibility`:
   `minAccountAgeHours` (the account must be at least that old) and
   `requiresPet` (the account must have adopted a pet). Both are facts the
@@ -256,8 +245,8 @@ feed their pets.
   not implemented yet, so they are not available as rules; adding them is
   future work that needs those features first.
 
-Ordinary essentials never carry eligibility rules, and ordinary limited
-stock should not either; reserve them for merchandise valuable enough to
+Ordinary food must never carry eligibility rules, and ordinary
+merchandise should not either; reserve them for things valuable enough to
 attract throwaway accounts.
 
 ### Rate limits (counted in PostgreSQL, shared by every process)
@@ -322,15 +311,15 @@ until then.
 
 * **Add a shop**: append an object as above. The schedule row is created
   on the next startup and the first restock happens on the first tick.
-* **Add merchandise**: add an entry to `essentials` or `restockPool`.
-* **Change a price**: edit `price` (a number for essentials, a range for
-  the pool).
+* **Add merchandise**: add an entry to `restockPool`.
+* **Change a price**: edit the entry's `price` range.
+* **Keep something on the shelves most of the time**: give it a high
+  `weight` and a large `quantity` range, as the biscuit has.
 * **Change restock frequency**: edit `restock.minMinutes` and `maxMinutes`.
 * **Change how often an item appears**: edit its `weight`, or widen the
   gap between `listingsMax` and the pool size (fewer listings per restock
-  make low-weight entries rarer). An item cannot be made to appear in
-  every restock through the pool; if it should always be available, make
-  it an essential.
+  make low-weight entries scarcer). Nothing can be made to appear in every
+  restock; that is deliberate.
 * **Change quantities**: edit `quantity: [low, high]` on the entry.
 * **Make something scarce**: a low `weight`, a small `quantity`, a high
   `price` range, `maxPerPurchase: 1`, and optionally a `dailySupplyCap` and
@@ -345,11 +334,10 @@ until then.
 ## The shop page
 
 Each shop page shows the header and keeper artwork (placeholders until the
-files exist), a line of the keeper's dialogue, the player's coins, the
-essentials with buy forms, then "On the shelves today": the current
-listings with price, remaining count, and a buy form, or "Sold out". A
-line above the shelves says how long ago the last restock was, never when
-the next one is.
+files exist), a line of the keeper's dialogue, the player's coins, then
+"On the shelves today": the current listings with price, remaining count,
+and a buy form, or "Sold out". A line above the shelves says how long ago
+the last restock was, never when the next one is.
 
 Everything works with plain forms. `public/js/shop.js` is an optional
 extra: once a minute, while the tab is visible, it fetches
@@ -378,7 +366,7 @@ that name, so the history always says who did what.
 | Pause automatic restocks | `npm run shop-admin -- pause questionable-grocer --by yourname` |
 | Resume them | `npm run shop-admin -- resume questionable-grocer --by yourname` |
 | Restock now | `npm run shop-admin -- restock questionable-grocer --by yourname` |
-| Stop an account buying limited stock | `npm run shop-admin -- restrict wobble --reason "..." --hours 48 --by yourname` |
+| Stop an account buying from shops | `npm run shop-admin -- restrict wobble --reason "..." --hours 48 --by yourname` |
 | Lift that | `npm run shop-admin -- unrestrict wobble --by yourname` |
 
 A manual restock goes through exactly the same function as the scheduler:
@@ -425,7 +413,8 @@ machine (one Node process, PostgreSQL 16 on the same host, 8 October 2026):
 | 30 | 20 s + rush | 13 ms / 148 ms | 14 ms / 125 ms | 179 / 36 | 30 buyers, 141 ms, 1 winner | 0 |
 | 100 | 30 s + rush | 12 ms / 377 ms | 13 ms / 336 ms | 906 / 139 | 100 buyers, 356 ms, 1 winner | 0 |
 
-In both runs every refusal was "sold out" (players were given 5,000
+In both runs (made before essentials were removed, when two items were
+always in stock) every refusal was "sold out" (players were given 5,000
 coins, so nobody ran short), restocks replaced the shelves every five
 seconds while people were buying, three players reloading eight times a
 second were rate limited after their allowance (68 and 63 refused reloads),
