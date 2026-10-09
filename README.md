@@ -137,7 +137,47 @@ Login and registration are rate limited per IP address (10 login attempts
 per 15 minutes, 5 registrations per hour). The counters live in the
 database, so they survive restarts and are shared by every server process.
 
-## Deploying
+## Deploying to a server (anrpg.com)
+
+`deploy/setup-droplet.sh` turns a brand-new Ubuntu server (a DigitalOcean
+droplet, for example) into a running copy of the game with HTTPS. As root
+on the new server:
+
+```
+curl -fsSL https://raw.githubusercontent.com/doublestoppd/bg/main/deploy/setup-droplet.sh | bash
+```
+
+If the repository is private, copy the script over instead (`scp` it, then
+`bash setup-droplet.sh`). It installs Node.js 22, PostgreSQL and Caddy,
+creates a `blobgarden` system user, role and databases with a random
+password, clones the game into `/srv/blobgarden/app`, writes
+`/srv/blobgarden/.env` with a generated session secret, installs a systemd
+service that keeps the game running, points Caddy at `anrpg.com` and
+`www.anrpg.com`, and opens the firewall for SSH, HTTP and HTTPS. Caddy
+obtains and renews the certificate on its own once the domain's A record
+points at the server. The script can be run again safely; it skips
+anything that already exists. Set `DOMAIN=other.example` before running it
+to use a different domain.
+
+Afterwards the `blobgarden` command manages the server:
+
+| Command                    | What it does                                                   |
+|----------------------------|----------------------------------------------------------------|
+| `blobgarden status`        | Whether the game and Caddy are running, plus recent log lines  |
+| `blobgarden logs`          | Follow the game's log                                          |
+| `blobgarden restart`       | Restart the game process                                       |
+| `blobgarden update`        | Download the latest code from GitHub and restart; keeps all data |
+| `blobgarden reset`         | Stop the game, re-download the latest code, drop and recreate both databases, start again. Asks for confirmation (`--yes` skips it). |
+| `blobgarden test`          | Run the test suite on the server against the test database     |
+| `blobgarden shop-admin ...`| Run the shop administration tool (see `docs/SHOPS.md`)          |
+
+The settings file `/srv/blobgarden/.env` lives outside the checkout and is
+linked in as `app/.env`, so a reset or update never loses it. The service
+runs with `NODE_ENV=production` and `TRUST_PROXY=1`, which is why
+`npm run db:reset` refuses to run there; `blobgarden reset` recreates the
+databases through PostgreSQL instead.
+
+### Deploying by hand
 
 1. Provision PostgreSQL and create a database and role for the game.
 2. Set `DATABASE_URL`, a long random `SESSION_SECRET`, `NODE_ENV=production`,

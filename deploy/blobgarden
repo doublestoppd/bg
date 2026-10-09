@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+#
+# Day-to-day management of a Blobgarden server installed by
+# deploy/setup-droplet.sh. Installed to /usr/local/bin/blobgarden.
+#
+#   blobgarden status          Is the game running? Recent log lines.
+#   blobgarden logs            Follow the game's log (Ctrl-C to stop).
+#   blobgarden restart         Restart the game process.
+#   blobgarden update          Download the latest code and restart. Keeps all data.
+#   blobgarden reset           Download the latest code AND wipe both databases.
+#   blobgarden test            Run the automated tests on this server.
+#   blobgarden shop-admin ...  Run the shop admin tool (see docs/SHOPS.md).
+#
+# Settings are read from the same place setup-droplet.sh wrote them.
+set -euo pipefail
+
+SERVICE_USER=blobgarden
+HOME_DIR=/srv/blobgarden
+APP_DIR="$HOME_DIR/app"
+ENV_FILE="$HOME_DIR/.env"
+REPO_URL="${REPO_URL:-https://github.com/doublestoppd/bg.git}"
+BRANCH="${BRANCH:-main}"
+
+say() { printf '\n==> %s\n' "$*"; }
+
+need_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "This command needs root. Try: sudo blobgarden $*" >&2
+    exit 1
+  fi
+}
+
+# Runs a command inside the app directory as the service user.
+as_app() {
+  sudo -u "$SERVICE_USER" -H bash -c "cd '$APP_DIR' && $*"
+}
+
+# The database names come from the connection strings in .env, so the two
+# scripts never disagree about them.
+db_name_from() {
+  sed -n "s#^$1=postgres://.*/\([^?]*\).*#\1#p" "$ENV_FILE"
+}
+
+download_latest() {
+  say "Downloading the latest code ($BRANCH)"
+  if [ -d "$APP_DIR/.git" ]; then
+    as_app "git fetch --quiet origin '$BRANCH' && git reset --quiet --hard 'origin/$BRANCH'"
+  else
+    sudo -u "$SERVICE_USER" -H git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+  fi
+  ln -sfn "$ENV_FILE" "$APP_DIR/.env"
+  chown -h "$SERVICE_USER:$SERVICE_USER" "$APP_DIR/.env"
+  as_app "git log -1 --format='Now at %h: %s'"
+  say "Installing npm packages"
+  as_app "npm install --omit=dev --no-audit --no-fund"
+  # Keep this command itself current.
+  install -m 0755 "$APP_DIR/deploy/blobgarden" /usr/local/bin/blobgarden
+}
+
+recreate_databases() {
+  local db test_db
+  db="$(db_name_from DATABASE_URL)"
+  test_db="$(db_name_from TEST_DATABASE_URL)"
+  say "Recreating the databases ($db, $test_db)"
+  for name in "$db" "$test_db"; do
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS $name WITH (FORCE)"
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $name OWNER $SERVICE_USER"
+  done
+  say "Creating the tables"
+  as_app "npm run --silent db:migrate"
+}
+
+confirm_reset() {
+  if [ "${1:-}" = "--yes" ]; then return; fi
+  echo "This deletes EVERY player, pet, item and purchase on this server, then"
+  echo "downloads the latest code and starts again with empty databases."
+  read -r -p "Type RESET to continue: " answer
+  if [ "$answer" != "RESET" ]; then
+    echo "Nothing was changed."
+    exit 1
+  fi
+}
+
+case "${1:-help}" in
+  status)
+    systemctl status blobgarden --no-pager -n 15 || true
+    echo
+    systemctl is-active caddy >/dev/null && echo "Caddy (HTTPS): running" || echo "Caddy (HTTPS): NOT running"
+    ;;
+  logs)
+    journalctl -u blobgarden -f -n 100
+    ;;
+  restart)
+    need_root "$@"
+    systemctl restart blobgarden
+    systemctl status blobgarden --no-pager -n 5
+    ;;
+  update)
+    need_root "$@"
+    download_latest
+    say "Restarting the game"
+    systemctl restart blobgarden
+    systemctl status blobgarden --no-pager -n 5
+    ;;
+  reset)
+    need_root "$@"
+    confirm_reset "${2:-}"
+    say "Stopping the game"
+    systemctl stop blobgarden
+    # A fresh clone, not just a pull: anything that crept into the old
+    # checkout (stray files, local edits) goes too.
+    rm -rf "$APP_DIR"
+    download_latest
+    recreate_databases
+    say "Starting the game"
+    systemctl start blobgarden
+    systemctl status blobgarden --no-pager -n 5
+    echo
+    echo "Reset complete. The game is running with the latest code and empty databases."
+    ;;
+  test)
+    need_root "$@"
+    # The test suite wipes TEST_DATABASE_URL, never the live database.
+    as_app "npm test"
+    ;;
+  shop-admin)
+    need_root "$@"
+    shift
+    as_app "npm run --silent shop-admin -- $(printf '%q ' "$@")"
+    ;;
+  help|-h|--help)
+    sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    echo "Unknown command: $1" >&2
+    echo "Run 'blobgarden help' for the list of commands." >&2
+    exit 1
+    ;;
+esac

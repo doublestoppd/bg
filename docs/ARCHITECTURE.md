@@ -65,6 +65,7 @@ src/
   views/           EJS templates and partials
   public/          CSS, browser JavaScript, images
 scripts/           migrate, reset (development only), and the shop-admin utility
+deploy/            server setup script and the blobgarden management command (see README)
 test/              mirrors src/; run with npm test
 docs/              this file
 ```
