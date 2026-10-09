@@ -22,3 +22,6 @@
     <% if (locals.flash) { %>
     <div class="notice notice-<%= flash.type %>"><p><%= flash.text %></p></div>
     <% } %>
+    <% if (locals.error) { %>
+    <div class="notice notice-error"><p><%= error %></p></div>
+    <% } %>

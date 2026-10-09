@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { resetDatabase } from '../helpers/test-database.js';
+import { resetDatabase, databaseWithPlayer } from '../helpers/test-database.js';
 import { withTransaction } from '../../src/db/pool.js';
 import { registerAccount } from '../../src/game/accounts.js';
 import { purchaseItem, MAX_PURCHASE_QUANTITY } from '../../src/game/purchases.js';
@@ -21,11 +21,6 @@ function buy(db, userId, itemId, quantity, extra = {}) {
   return purchaseItem(db, userId, { shopId: GROCER, itemId, quantity, shownPrice: PRICES[itemId] || 1, requestId: newRequestId(), ...extra });
 }
 
-async function playerDb() {
-  const db = await resetDatabase();
-  const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
-  return { db, user };
-}
 
 async function snapshot(db, userId) {
   return {
@@ -38,7 +33,7 @@ async function snapshot(db, userId) {
 }
 
 test('a purchase moves coins out, items in, and writes the records', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const result = await buy(db, user.id, 'humming-turnip', 2);
   assert.equal(result.totalCost, 24);
   assert.equal(result.balance, 76);
@@ -57,14 +52,14 @@ test('a purchase moves coins out, items in, and writes the records', async () =>
 });
 
 test('insufficient funds leaves everything unchanged', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const before = await snapshot(db, user.id);
   await assert.rejects(buy(db, user.id, 'humming-turnip', 9), /not have enough coins/);
   assert.deepEqual(await snapshot(db, user.id), before);
 });
 
 test('unknown shops and items the shop does not sell are refused', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const before = await snapshot(db, user.id);
   const attempt = (shopId, itemId) => purchaseItem(db, user.id, { shopId, itemId, quantity: 1, shownPrice: 5, requestId: newRequestId() });
   await assert.rejects(attempt('black-market', 'soggy-biscuit'), /no such shop/);
@@ -78,7 +73,7 @@ test('unknown shops and items the shop does not sell are refused', async () => {
 });
 
 test('quantity and request id are validated', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const before = await snapshot(db, user.id);
   for (const quantity of [0, -1, 1.5, '2', NaN, Infinity, MAX_PURCHASE_QUANTITY + 1, 21, undefined]) {
     await assert.rejects(buy(db, user.id, 'soggy-biscuit', quantity), GameRuleError, String(quantity));
@@ -94,7 +89,7 @@ test('quantity and request id are validated', async () => {
 });
 
 test('the price always comes from the catalog, and a different shown price is refused', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const result = await buy(db, user.id, 'soggy-biscuit', 3, { price: 1, totalCost: 1 });
   assert.equal(result.totalCost, 15);
   assert.equal(await getBalance(db, user.id), 85);
@@ -106,7 +101,7 @@ test('the price always comes from the catalog, and a different shown price is re
 });
 
 test('a repeated request id returns the first purchase instead of buying again', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const requestId = newRequestId();
   const first = await buy(db, user.id, 'humming-turnip', 1, { requestId });
   const again = await buy(db, user.id, 'humming-turnip', 1, { requestId });
@@ -122,7 +117,7 @@ test('a repeated request id returns the first purchase instead of buying again',
 });
 
 test('simultaneous submissions with one request id buy once', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const requestId = newRequestId();
   const repeat = () => buy(db, user.id, 'humming-turnip', 1, { requestId });
   const results = await Promise.all([repeat(), repeat(), repeat()]);
@@ -134,7 +129,7 @@ test('simultaneous submissions with one request id buy once', async () => {
 });
 
 test('a full stack rolls the coins and the purchase record back', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await withTransaction(db, (tx) => awardCoins(tx, user.id, 10_000, { reason: 'reward' }));
   await grantItem(db, user.id, 'soggy-biscuit', MAX_STACK_SIZE - 3); // welcome biscuits make 999
   const before = await snapshot(db, user.id);
@@ -143,7 +138,7 @@ test('a full stack rolls the coins and the purchase record back', async () => {
 });
 
 test('a failure after the coins are taken rolls everything back', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const before = await snapshot(db, user.id);
   await db.query(`
     CREATE FUNCTION fail_grant() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'simulated failure'; END $$ LANGUAGE plpgsql;
@@ -155,7 +150,7 @@ test('a failure after the coins are taken rolls everything back', async () => {
 });
 
 test('simultaneous purchases stop exactly when the coins run out', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const results = await Promise.allSettled(Array.from({ length: 30 }, () => buy(db, user.id, 'soggy-biscuit', 1)));
   assert.equal(results.filter((r) => r.status === 'fulfilled').length, 20, '100 coins buys twenty 5-coin biscuits');
   for (const r of results.filter((r) => r.status === 'rejected')) assert.ok(r.reason instanceof GameRuleError);

@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDatabase } from '../helpers/test-database.js';
+import { databaseWithPlayer } from '../helpers/test-database.js';
 import { registerAccount } from '../../src/game/accounts.js';
 import { grantItem, countOwned } from '../../src/game/inventory.js';
 import { adoptPet, feedPet, getPet, STAT_MAX } from '../../src/game/pets.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
 async function setup() {
-  const db = await resetDatabase();
-  const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
+  const { db, user } = await databaseWithPlayer();
   const pet = await adoptPet(db, user.id, { name: 'Pebbles', species: 'snibble' });
   return { db, user, pet };
 }

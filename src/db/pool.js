@@ -49,7 +49,5 @@ export function assertInTransaction(db, what) {
 
 // PostgreSQL error codes this application reacts to.
 export const PG_UNIQUE_VIOLATION = '23505';
-export const PG_CHECK_VIOLATION = '23514';
-export const PG_FOREIGN_KEY_VIOLATION = '23503';
 export const PG_DEADLOCK = '40P01';
 export const PG_SERIALIZATION_FAILURE = '40001';

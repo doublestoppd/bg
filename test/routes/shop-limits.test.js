@@ -11,12 +11,7 @@ import { waitForFreshWindow } from '../helpers/rate-limit-window.js';
 
 const MINUTE = 60 * 1000;
 
-async function listingForm(server, listingId) {
-  const page = await server.request('/shops/questionable-grocer');
-  const csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  const form = page.text.match(new RegExp(`name="request_id" value="([^"]+)">\\s*<input type="hidden" name="listing" value="${listingId}">\\s*<input type="hidden" name="shown_price" value="(\\d+)"`));
-  return { csrf, requestId: form[1], shownPrice: form[2] };
-}
+const listingForm = (server, listingId) => server.listingForm('questionable-grocer', listingId);
 
 async function stocked(server) {
   await ensureShopStates(server.db);
@@ -117,9 +112,8 @@ test('repeated refused purchases pause buying, and each refusal is logged with i
     const userId = await server.registerAndLogIn('wobble');
     const listing = await stocked(server);
     await server.db.query('UPDATE shop_stock SET remaining_quantity = 0 WHERE id = $1', [listing.id]);
-    const form = await listingForm(server, listing.id).catch(() => null); // sold out: no form on the page
-    const page = await server.request('/shops/questionable-grocer');
-    const csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
+    const form = await listingForm(server, listing.id); // sold out: no form on the page
+    const csrf = await server.csrfTokenFrom('/shops/questionable-grocer');
     const attempt = () => server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
       form: { _csrf: csrf, request_id: 'aaaaaaaaaaaaaaaaaaaa', listing: listing.id, shown_price: listing.unit_price, quantity: '1' },
@@ -170,12 +164,10 @@ test('rare purchases are logged, essentials are always purchasable, and old log 
     assert.equal(log[0].details.item, 'pickled-moonbeam');
 
     // Essentials: no limits beyond the per-minute attempt allowance.
-    const page = await server.request('/shops/questionable-grocer');
-    const csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-    const essential = page.text.match(/name="request_id" value="([^"]+)">\s*<input type="hidden" name="item" value="soggy-biscuit"/)[1];
+    const biscuit = await server.buyForm('questionable-grocer', 'soggy-biscuit');
     const food = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
-      form: { _csrf: csrf, request_id: essential, item: 'soggy-biscuit', shown_price: '5', quantity: '2' },
+      form: { _csrf: biscuit.csrf, request_id: biscuit.requestId, item: 'soggy-biscuit', shown_price: biscuit.shownPrice, quantity: '2' },
     });
     assert.equal(food.status, 302);
 

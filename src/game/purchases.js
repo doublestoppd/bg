@@ -15,6 +15,16 @@ import { lockListing, decrementListing } from '../db/shop-stock.js';
 // A hard ceiling on one purchase, above any entry's own maxPerPurchase.
 // The 999 stack limit in game/inventory.js still applies on top of this.
 export const MAX_PURCHASE_QUANTITY = 99;
+
+// The most of an essential one purchase may take.
+export function essentialMaxQuantity(entry) {
+  return Math.min(entry.maxPerPurchase, MAX_PURCHASE_QUANTITY);
+}
+
+// The most of a limited listing one purchase may take right now.
+export function listingMaxQuantity(listing) {
+  return Math.min(listing.max_per_purchase, listing.remaining_quantity, MAX_PURCHASE_QUANTITY);
+}
 // How many times a purchase is retried after a PostgreSQL deadlock. The
 // request id makes a retry safe: it can never buy twice.
 const DEADLOCK_RETRIES = 2;
@@ -133,7 +143,7 @@ function essentialOffer(shop, itemId, quantity) {
   if (!essential) {
     throw new GameRuleError(`${shop.name} does not sell that.`, 'bad_request');
   }
-  const maxQuantity = Math.min(essential.maxPerPurchase, MAX_PURCHASE_QUANTITY);
+  const maxQuantity = essentialMaxQuantity(essential);
   if (quantity > maxQuantity) {
     throw new GameRuleError(`You can buy at most ${maxQuantity} ${essential.item.name} at a time.`, 'limit_exceeded');
   }

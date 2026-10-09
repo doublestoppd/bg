@@ -7,22 +7,9 @@ import { ensureShopStates, restockShop, restockShopWithDefinition } from '../../
 import { findShop } from '../../src/game/shops.js';
 import { highRandom, lowRandom } from '../helpers/fixed-random.js';
 
-// Fetches the shop page and returns the CSRF token plus the request id and
-// shown price of the buy form for one essential.
-async function buyForm(server, itemId) {
-  const page = await server.request('/shops/questionable-grocer');
-  const csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  const form = page.text.match(new RegExp(`name="request_id" value="([^"]+)">\\s*<input type="hidden" name="item" value="${itemId}">\\s*<input type="hidden" name="shown_price" value="(\\d+)"`));
-  return { csrf, requestId: form[1], shownPrice: form[2] };
-}
-
-// The same for a limited listing, by its stock id.
-async function listingForm(server, listingId) {
-  const page = await server.request('/shops/questionable-grocer');
-  const csrf = page.text.match(/name="_csrf" value="([^"]+)"/)[1];
-  const form = page.text.match(new RegExp(`name="request_id" value="([^"]+)">\\s*<input type="hidden" name="listing" value="${listingId}">\\s*<input type="hidden" name="shown_price" value="(\\d+)"`));
-  return { csrf, requestId: form && form[1], shownPrice: form && form[2], present: Boolean(form) };
-}
+const GROCER = 'questionable-grocer';
+const buyForm = (server, itemId) => server.buyForm(GROCER, itemId);
+const listingForm = (server, listingId) => server.listingForm(GROCER, listingId);
 
 test('guests are sent to the login page', async () => {
   const server = await startTestServer();
@@ -165,7 +152,7 @@ test('a player can buy a limited listing from the shelves, and it shows as sold 
     await server.db.query('UPDATE shop_stock SET remaining_quantity = 1, unit_price = 18 WHERE id = $1', [listing.id]);
 
     const form = await listingForm(server, listing.id);
-    assert.ok(form.present, 'the listing has a buy form');
+    assert.ok(form, 'the listing has a buy form');
     const submit = await server.request('/shops/questionable-grocer/buy', {
       method: 'POST',
       form: { _csrf: form.csrf, request_id: form.requestId, listing: listing.id, shown_price: form.shownPrice, quantity: '1' },
@@ -174,7 +161,7 @@ test('a player can buy a limited listing from the shelves, and it shows as sold 
     const page = await server.request('/shops/questionable-grocer');
     assert.match(page.text, /You bought 1 Fizzing Pebble for 18 coins\. You have 82 coins left\. That was the last of them\./);
     assert.match(page.text, /Sold out/);
-    assert.equal((await listingForm(server, listing.id)).present, false, 'no buy form once sold out');
+    assert.equal(await listingForm(server, listing.id), null, 'no buy form once sold out');
     assert.equal(await countOwned(server.db, userId, 'fizzing-pebble'), 1);
   } finally {
     await server.close();

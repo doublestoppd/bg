@@ -4,6 +4,8 @@ import { findItem } from './items.js';
 import { takeItem } from './inventory.js';
 import { withTransaction } from '../db/pool.js';
 import { countPetsByOwner, findPetForOwner, findPetsByOwner, insertPet, updatePetStats } from '../db/pets.js';
+import { lockUser } from '../db/users.js';
+import { STAT_NAMES } from './stats.js';
 
 // ----- Tunable rules -----
 export const MAX_PETS_PER_PLAYER = 4;
@@ -12,7 +14,6 @@ export const PET_NAME_MAX_LENGTH = 20;
 export const STARTING_STATS = { hunger: 60, happiness: 60, health: 100 };
 export const STAT_MIN = 0;
 export const STAT_MAX = 100;
-const STAT_NAMES = ['hunger', 'happiness', 'health'];
 
 // Letters, numbers, spaces, apostrophes and hyphens. Collapsed to single
 // spaces before checking, so "Sir   Wobble" becomes "Sir Wobble".
@@ -35,7 +36,7 @@ export async function adoptPet(pool, userId, { name, species }) {
   // Counting and inserting happen in one transaction with the player's
   // row locked, so two quick submissions cannot both slip under the limit.
   return withTransaction(pool, async (db) => {
-    await db.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [userId]);
+    await lockUser(db, userId);
     if ((await countPetsByOwner(db, userId)) >= MAX_PETS_PER_PLAYER) {
       throw new GameRuleError(`You can look after at most ${MAX_PETS_PER_PLAYER} pets at once.`);
     }

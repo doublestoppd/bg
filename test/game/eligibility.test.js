@@ -1,38 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { resetDatabase } from '../helpers/test-database.js';
-import { lowRandom } from '../helpers/fixed-random.js';
+import { databaseWithPlayer } from '../helpers/test-database.js';
+import { stockOne as stockOneListing } from '../helpers/shop-fixtures.js';
 import { createPool, withTransaction } from '../../src/db/pool.js';
 import config from '../../src/config.js';
-import { registerAccount } from '../../src/game/accounts.js';
 import { adoptPet } from '../../src/game/pets.js';
 import { purchaseItem } from '../../src/game/purchases.js';
-import { ensureShopStates, restockShopWithDefinition } from '../../src/game/restocking.js';
-import { findShop } from '../../src/game/shops.js';
+import { ensureShopStates } from '../../src/game/restocking.js';
 import { awardCoins, getBalance } from '../../src/game/currency.js';
 import { countOwned } from '../../src/game/inventory.js';
 import { SHOP_LIMITS } from '../../src/game/shop-limits.js';
 import { insertRestriction, liftRestrictions, findActiveRestriction } from '../../src/db/restrictions.js';
 
 const GROCER = 'questionable-grocer';
-const grocer = findShop(GROCER);
 const newRequestId = () => crypto.randomUUID();
 
-async function stockOne(db, itemId, overrides = {}) {
-  const entry = grocer.restockPool.find((e) => e.itemId === itemId);
-  const definition = {
-    ...grocer,
-    restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
-    restockPool: [{ ...entry, quantity: [50, 50], price: [1, 1], maxPerPurchase: 1, maxPerRestock: 100, dailySupplyCap: undefined, ...overrides }],
-  };
-  return (await restockShopWithDefinition(db, definition, { force: true, random: lowRandom })).listings[0];
-}
+// Plenty of cheap copies, one per purchase, so limits other than the one
+// under test never get in the way.
+const stockOne = (db, itemId) => stockOneListing(db, itemId, { quantity: 50, price: 1, maxPerPurchase: 1, maxPerRestock: 100 });
 
 async function setup() {
-  const db = await resetDatabase();
+  const { db, user } = await databaseWithPlayer();
   await ensureShopStates(db);
-  const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   await withTransaction(db, (tx) => awardCoins(tx, user.id, 1000, { reason: 'reward' }));
   return { db, user };
 }

@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { resetDatabase } from '../helpers/test-database.js';
-import { highRandom, lowRandom } from '../helpers/fixed-random.js';
+import { databaseWithPlayer } from '../helpers/test-database.js';
+import { stockOne } from '../helpers/shop-fixtures.js';
 import { createPool, withTransaction } from '../../src/db/pool.js';
 import config from '../../src/config.js';
 import { registerAccount } from '../../src/game/accounts.js';
 import { purchaseItem } from '../../src/game/purchases.js';
-import { ensureShopStates, restockShopWithDefinition } from '../../src/game/restocking.js';
-import { findShop } from '../../src/game/shops.js';
+import { ensureShopStates } from '../../src/game/restocking.js';
 import { getBalance, awardCoins } from '../../src/game/currency.js';
 import { countOwned } from '../../src/game/inventory.js';
 import { findCoinTransactionsByUser } from '../../src/db/coin-transactions.js';
@@ -17,26 +16,11 @@ import { findActiveListings, findListingsByRestock } from '../../src/db/shop-sto
 import { GameRuleError } from '../../src/game/errors.js';
 
 const GROCER = 'questionable-grocer';
-const grocer = findShop(GROCER);
 const newRequestId = () => crypto.randomUUID();
 
-// Restocks the grocer with exactly one listing of the given item, with a
-// fixed quantity and price so tests can reason about it.
-async function stockOne(db, itemId, { quantity = 2, price = 20, maxPerPurchase = 3, maxPerRestock = 5 } = {}) {
-  const entry = grocer.restockPool.find((e) => e.itemId === itemId);
-  const definition = {
-    ...grocer,
-    restock: { ...grocer.restock, listingsMin: 1, listingsMax: 1 },
-    restockPool: [{ ...entry, quantity: [quantity, quantity], price: [price, price], maxPerPurchase, maxPerRestock, dailySupplyCap: undefined }],
-  };
-  const result = await restockShopWithDefinition(db, definition, { force: true, random: lowRandom });
-  return result.listings[0];
-}
-
 async function setup() {
-  const db = await resetDatabase();
+  const { db, user } = await databaseWithPlayer();
   await ensureShopStates(db);
-  const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
   return { db, user };
 }
 

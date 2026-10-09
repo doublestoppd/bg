@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import { allShops, findShop, quantityRangeFor } from './shops.js';
+import { findItem } from './items.js';
+import { essentialMaxQuantity, listingMaxQuantity } from './purchases.js';
 import { withTransaction } from '../db/pool.js';
 import { ensureShopState, lockShopStateSkipLocked, recordRestock, findShopState } from '../db/shop-state.js';
 import { insertRestockEvent, setRestockListingCount, supersedeRestocks } from '../db/shop-restock-events.js';
@@ -17,7 +19,7 @@ import { reserveDailySupply } from '../db/daily-supply.js';
 // Randomness is injectable for tests. Production uses crypto.randomInt.
 // A `random` has one method: int(min, max), inclusive on both ends.
 
-export const secureRandom = {
+const secureRandom = {
   int: (min, max) => crypto.randomInt(min, max + 1),
 };
 
@@ -143,15 +145,18 @@ function pickWeightedIndex(entries, random) {
 }
 
 // What a visitor sees in a shop: the essentials (from the catalog) and the
-// current limited listings (from the database), plus whether a restock is
-// coming. The exact time is deliberately not returned.
+// current limited listings (from the database), each with the most a
+// purchase may take, plus whether a restock is coming. The exact time of
+// the next restock is deliberately not returned.
 export async function shopMerchandise(pool, shopId) {
   const shop = findShop(shopId);
   if (!shop) throw new Error(`No shop "${shopId}"`);
   const state = await findShopState(pool, shopId);
+  const listings = await findActiveListings(pool, shopId);
   return {
-    essentials: shop.essentials,
-    listings: await findActiveListings(pool, shopId),
+    essentials: shop.essentials.map((entry) => ({ ...entry, item: findItem(entry.itemId), maxQuantity: essentialMaxQuantity(entry) })),
+    listings: listings.map((listing) => ({ ...listing, maxQuantity: listingMaxQuantity(listing) })),
+    currentRestockId: state ? state.current_restock_id : null,
     paused: state ? state.paused : false,
     lastRestockAt: state ? state.last_restock_at : null,
   };

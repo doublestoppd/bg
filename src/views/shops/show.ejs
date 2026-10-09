@@ -1,9 +1,5 @@
 <%- include('../partials/header') %>
 
-<% if (error) { %>
-<div class="notice notice-error"><p><%= error %></p></div>
-<% } %>
-
 <div class="illustration-box shop-header">
   <%- include('../partials/picture', { src: shop.headerImage, alt: shop.name, cssClass: 'shop-banner', width: 320, height: 120 }) %>
   <div class="shop-keeper-row">

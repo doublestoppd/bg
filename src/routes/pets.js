@@ -3,6 +3,7 @@ import { requireLogin } from '../middleware/require-login.js';
 import { GameRuleError } from '../game/errors.js';
 import { allSpecies } from '../game/species.js';
 import { adoptPet, listPets, getPet, MAX_PETS_PER_PLAYER } from '../game/pets.js';
+import { STAT_NAMES, STAT_LABELS } from '../game/stats.js';
 
 const router = Router();
 
@@ -46,7 +47,7 @@ router.get('/:id', async (req, res) => {
       message: 'No pet of yours lives at that address.',
     });
   }
-  res.render('pets/show', { title: pet.name, pet, justAdopted: req.query.adopted === '1' });
+  res.render('pets/show', { title: pet.name, pet, statNames: STAT_NAMES, statLabels: STAT_LABELS, justAdopted: req.query.adopted === '1' });
 });
 
 export default router;

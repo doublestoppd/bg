@@ -18,7 +18,7 @@ import shopRoutes from './routes/shops.js';
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Builds the Express application. server.js calls this and starts listening;
-// the tests call it with an in-memory database and never touch the network.
+// the tests call it with a pool on the test database and a random port.
 // trustProxy and secureCookies default to the config values; tests override
 // them to check behaviour behind a reverse proxy.
 export function createApp({ db, trustProxy = config.trustProxy, secureCookies = config.isProduction }) {
@@ -84,8 +84,8 @@ export function createApp({ db, trustProxy = config.trustProxy, secureCookies = 
     });
   });
 
-  // Express recognises an error handler by its four parameters.
-  // eslint-disable-next-line no-unused-vars
+  // Express recognises an error handler by its four parameters, so `next`
+  // must stay even though it is unused.
   app.use((error, req, res, next) => {
     console.error(error);
     res.status(500).render('error', {

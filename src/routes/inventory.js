@@ -3,6 +3,7 @@ import { requireLogin } from '../middleware/require-login.js';
 import { GameRuleError } from '../game/errors.js';
 import { listInventory } from '../game/inventory.js';
 import { listPets, feedPet } from '../game/pets.js';
+import { STAT_NAMES, STAT_LABELS } from '../game/stats.js';
 
 const router = Router();
 
@@ -39,6 +40,7 @@ async function renderInventory(req, res, { status, error }) {
     title: 'Inventory',
     items: await listInventory(db, req.currentUser.id),
     pets: await listPets(db, req.currentUser.id),
+    statLabels: STAT_LABELS,
     error,
   });
 }
@@ -46,16 +48,12 @@ async function renderInventory(req, res, { status, error }) {
 // "Hunger 60 to 75, Happiness 60 to 65."
 function describeChanges(before, after) {
   const parts = [];
-  for (const stat of ['hunger', 'happiness', 'health']) {
+  for (const stat of STAT_NAMES) {
     if (before[stat] !== after[stat]) {
-      parts.push(`${capitalise(stat)} ${before[stat]} to ${after[stat]}`);
+      parts.push(`${STAT_LABELS[stat]} ${before[stat]} to ${after[stat]}`);
     }
   }
   return parts.length ? parts.join(', ') + '.' : 'Nothing seemed to change.';
-}
-
-function capitalise(word) {
-  return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 export default router;

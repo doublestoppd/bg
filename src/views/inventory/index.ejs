@@ -1,9 +1,5 @@
 <%- include('../partials/header') %>
 
-<% if (error) { %>
-<div class="notice notice-error"><p><%= error %></p></div>
-<% } %>
-
 <% if (items.length === 0) { %>
 <p>Your pockets are empty. Odd things turn up around <%= site.name %> from time to time.</p>
 <% } else { %>
@@ -22,7 +18,7 @@
     <% } else if (item.category === 'food') { %>
     <div class="muted item-meta">
       <% const effects = Object.entries(item.effects); %>
-      <% effects.forEach(([stat, amount], index) => { %><%= stat.charAt(0).toUpperCase() + stat.slice(1) %> <%= amount > 0 ? '+' : '' %><%= amount %><%= index < effects.length - 1 ? ', ' : '' %><% }) %>
+      <% effects.forEach(([stat, amount], index) => { %><%= statLabels[stat] %> <%= amount > 0 ? '+' : '' %><%= amount %><%= index < effects.length - 1 ? ', ' : '' %><% }) %>
     </div>
       <% if (pets.length > 0) { %>
       <form method="post" action="/inventory/feed" class="item-action">

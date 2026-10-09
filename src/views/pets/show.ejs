@@ -12,9 +12,9 @@
 <%= pet.speciesInfo.description %></p>
 
 <table class="stat-table">
-  <% for (const stat of ['hunger', 'happiness', 'health']) { %>
+  <% for (const stat of statNames) { %>
   <tr>
-    <th><%= stat.charAt(0).toUpperCase() + stat.slice(1) %></th>
+    <th><%= statLabels[stat] %></th>
     <td><div class="stat-bar"><div class="stat-bar-fill" style="width: <%= pet[stat] %>%"></div></div></td>
     <td class="stat-number"><%= pet[stat] %>/100</td>
   </tr>

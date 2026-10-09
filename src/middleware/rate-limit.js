@@ -25,7 +25,7 @@ export function createRateLimiter({ scope, keyFrom = (req) => req.ip, maxAttempt
     try {
       const key = String(keyFrom(req));
       const now = Date.now();
-      const windowStart = new Date(now - (now % windowMs));
+      const windowStart = windowStartFor(windowMs, now);
       const count = await incrementCounter(req.app.locals.db, scope, key, windowStart);
 
       if (count > maxAttempts) {

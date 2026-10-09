@@ -1,4 +1,5 @@
 import { withTransaction } from '../db/pool.js';
+import { STAT_NAMES } from './stats.js';
 import { upsertItem, retireItemsNotIn } from '../db/items.js';
 
 // The item catalog. This file is the authoritative list of every item in
@@ -29,7 +30,6 @@ import { upsertItem, retireItemsNotIn } from '../db/items.js';
 
 export const CATEGORIES = ['food', 'curiosity'];
 export const RARITIES = ['common', 'uncommon', 'rare'];
-const EFFECT_STATS = ['hunger', 'happiness', 'health'];
 
 const items = [
   {
@@ -130,7 +130,7 @@ function validateCatalog(list) {
       throw new Error(`Item "${item.id}" obtainable must be true or false`);
     }
     for (const [stat, amount] of Object.entries(item.effects || {})) {
-      if (!EFFECT_STATS.includes(stat)) throw new Error(`Item "${item.id}" affects unknown stat "${stat}"`);
+      if (!STAT_NAMES.includes(stat)) throw new Error(`Item "${item.id}" affects unknown stat "${stat}"`);
       if (!Number.isInteger(amount)) throw new Error(`Item "${item.id}" effect "${stat}" must be a whole number`);
     }
   }

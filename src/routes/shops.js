@@ -4,8 +4,7 @@ import { requireLogin } from '../middleware/require-login.js';
 import { createRateLimiter, windowStartFor } from '../middleware/rate-limit.js';
 import { GameRuleError } from '../game/errors.js';
 import { allShops, findShop } from '../game/shops.js';
-import { findItem } from '../game/items.js';
-import { purchaseItem, MAX_PURCHASE_QUANTITY } from '../game/purchases.js';
+import { purchaseItem } from '../game/purchases.js';
 import { shopMerchandise } from '../game/restocking.js';
 import { SHOP_LIMITS } from '../game/shop-limits.js';
 import { logShopActivity, refusalKind } from '../game/activity.js';
@@ -53,7 +52,7 @@ router.get('/:id/stock.json', viewLimits, async (req, res, next) => {
   try {
     const merchandise = await shopMerchandise(req.app.locals.db, shop.id);
     res.json({
-      restockId: merchandise.listings.length ? merchandise.listings[0].restock_id : null,
+      restockId: merchandise.currentRestockId,
       paused: merchandise.paused,
       listings: merchandise.listings.map((l) => ({ id: l.id, remaining: l.remaining_quantity })),
     });
@@ -67,13 +66,14 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
   if (!shop) return shopNotFound(res);
   const db = req.app.locals.db;
   const userId = req.currentUser.id;
+  const listingId = Number.isSafeInteger(Number(req.body.listing)) ? Number(req.body.listing) : null;
 
   // Too many refused purchases lately pauses buying for the rest of the
   // window. A person who clicks a sold-out item twice never notices; a
   // script hammering the shelves does.
   const failedWindow = windowStartFor(FAILED_WINDOW_MS);
   if ((await readCounter(db, 'purchase-failed:user', String(userId), failedWindow)) >= SHOP_LIMITS.failedPurchasesPerFiveMinutes) {
-    await logShopActivity(db, { userId, ip: req.ip, kind: 'rate_limited', shopId: shop.id, details: { scope: 'purchase-failed:user' } });
+    await logLimited('purchase-failed:user')(req);
     return renderShop(req, res, shop, { status: 429, error: 'Too many purchases have failed in the last few minutes. Please wait a little and try again.' }).catch(next);
   }
 
@@ -90,7 +90,7 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
       requestId: req.body.request_id,
     });
     if (!result.repeated && result.item.rarity === 'rare' && result.remaining !== null) {
-      await logShopActivity(db, { userId, ip: req.ip, kind: 'rare_purchase', shopId: shop.id, stockId: Number(req.body.listing), details: { item: result.item.id, quantity: result.quantity, unitPrice: result.unitPrice } });
+      await logShopActivity(db, { userId, ip: req.ip, kind: 'rare_purchase', shopId: shop.id, stockId: listingId, details: { item: result.item.id, quantity: result.quantity, unitPrice: result.unitPrice } });
     }
     req.session.flash = { type: 'success', text: purchaseMessage(result) };
     res.redirect(`/shops/${shop.id}`);
@@ -98,8 +98,7 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
     if (error instanceof GameRuleError) {
       await incrementCounter(db, 'purchase-failed:user', String(userId), failedWindow);
       await logShopActivity(db, {
-        userId, ip: req.ip, kind: refusalKind(error), shopId: shop.id,
-        stockId: Number.isSafeInteger(Number(req.body.listing)) ? Number(req.body.listing) : null,
+        userId, ip: req.ip, kind: refusalKind(error), shopId: shop.id, stockId: listingId,
         details: { message: error.message, item: req.body.item || null, quantity: req.body.quantity },
       });
       return renderShop(req, res, shop, { status: 400, error: error.message }).catch(next);
@@ -115,20 +114,11 @@ async function renderShop(req, res, shop, { status, error }) {
     shop,
     keeperLine: shop.keeper.lines[Math.floor(Math.random() * shop.keeper.lines.length)],
     // Each buy form gets its own random request id (see purchaseItem).
-    essentials: merchandise.essentials.map((offer) => ({
-      ...offer,
-      item: findItem(offer.itemId),
-      maxQuantity: Math.min(offer.maxPerPurchase, MAX_PURCHASE_QUANTITY),
-      requestId: crypto.randomUUID(),
-    })),
-    listings: merchandise.listings.map((listing) => ({
-      ...listing,
-      maxQuantity: Math.min(listing.max_per_purchase, listing.remaining_quantity, MAX_PURCHASE_QUANTITY),
-      requestId: crypto.randomUUID(),
-    })),
+    essentials: merchandise.essentials.map((offer) => ({ ...offer, requestId: crypto.randomUUID() })),
+    listings: merchandise.listings.map((listing) => ({ ...listing, requestId: crypto.randomUUID() })),
     paused: merchandise.paused,
     restockMessage: restockMessage(shop, merchandise),
-    currentRestockId: merchandise.listings.length ? merchandise.listings[0].restock_id : null,
+    currentRestockId: merchandise.currentRestockId,
     error,
   });
 }
@@ -137,9 +127,16 @@ async function renderShop(req, res, shop, { status, error }) {
 function restockMessage(shop, merchandise) {
   if (merchandise.paused) return `The shutters are down. ${shop.keeper.name} is not restocking at the moment.`;
   if (!merchandise.lastRestockAt) return `${shop.keeper.name} is still unpacking the first delivery.`;
-  const minutes = Math.floor((Date.now() - new Date(merchandise.lastRestockAt).getTime()) / 60000);
-  const ago = minutes < 1 ? 'moments ago' : minutes === 1 ? 'a minute ago' : minutes < 60 ? `${minutes} minutes ago` : minutes < 120 ? 'about an hour ago' : `${Math.floor(minutes / 60)} hours ago`;
-  return `${shop.keeper.name} last restocked the shelves ${ago}. New stock arrives whenever it arrives.`;
+  return `${shop.keeper.name} last restocked the shelves ${timeAgo(merchandise.lastRestockAt)}. New stock arrives whenever it arrives.`;
+}
+
+function timeAgo(date) {
+  const minutes = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
+  if (minutes < 1) return 'moments ago';
+  if (minutes === 1) return 'a minute ago';
+  if (minutes < 60) return `${minutes} minutes ago`;
+  if (minutes < 120) return 'about an hour ago';
+  return `${Math.floor(minutes / 60)} hours ago`;
 }
 
 function purchaseMessage(result) {

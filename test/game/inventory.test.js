@@ -1,22 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDatabase } from '../helpers/test-database.js';
+import { resetDatabase, databaseWithPlayer } from '../helpers/test-database.js';
 import { withTransaction } from '../../src/db/pool.js';
 import { registerAccount } from '../../src/game/accounts.js';
 import { grantItem, takeItem, countOwned, listInventory, MAX_STACK_SIZE } from '../../src/game/inventory.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
-async function playerDb() {
-  const db = await resetDatabase();
-  const user = await registerAccount(db, { username: 'wobble', password: 'correct horse' });
-  return { db, user };
-}
 
 // takeItem insists on a transaction; this runs it in one.
 const take = (db, userId, itemId, quantity) => withTransaction(db, (tx) => takeItem(tx, userId, itemId, quantity));
 
 test('granting stacks onto one row per item', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await grantItem(db, user.id, 'fizzing-pebble', 2);
   await grantItem(db, user.id, 'fizzing-pebble', 3);
   assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 5);
@@ -25,14 +20,14 @@ test('granting stacks onto one row per item', async () => {
 });
 
 test('invalid grants are refused', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await assert.rejects(grantItem(db, user.id, 'golden-nothing', 1), GameRuleError);
   await assert.rejects(grantItem(db, user.id, 'jubilee-crumpet', 1), /no longer being handed out/);
   await assert.rejects(grantItem(db, 9999, 'soggy-biscuit', 1), /foreign key/i);
 });
 
 test('quantities must be safe whole numbers within the stack limit', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const bad = [1000, MAX_STACK_SIZE + 1, Number.MAX_SAFE_INTEGER + 1, Number.MAX_VALUE, Infinity, NaN, '5', 2.5, -1, 0, null, undefined];
   for (const quantity of bad) {
     await assert.rejects(grantItem(db, user.id, 'fizzing-pebble', quantity), GameRuleError, `grant ${String(quantity)}`);
@@ -43,7 +38,7 @@ test('quantities must be safe whole numbers within the stack limit', async () =>
 });
 
 test('a stack cannot grow past the limit, even with simultaneous grants', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await grantItem(db, user.id, 'fizzing-pebble', MAX_STACK_SIZE - 1);
   const results = await Promise.allSettled([
     grantItem(db, user.id, 'fizzing-pebble', 1),
@@ -57,7 +52,7 @@ test('a stack cannot grow past the limit, even with simultaneous grants', async 
 });
 
 test('taking decrements a stack and removes it when empty', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await grantItem(db, user.id, 'fizzing-pebble', 2);
   await take(db, user.id, 'fizzing-pebble', 1);
   assert.equal(await countOwned(db, user.id, 'fizzing-pebble'), 1);
@@ -68,7 +63,7 @@ test('taking decrements a stack and removes it when empty', async () => {
 });
 
 test('taking more than owned fails and changes nothing', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await grantItem(db, user.id, 'fizzing-pebble', 2);
   await assert.rejects(take(db, user.id, 'fizzing-pebble', 3), /not have enough/);
   await assert.rejects(take(db, user.id, 'pickled-moonbeam', 1), /not have enough/);
@@ -76,13 +71,13 @@ test('taking more than owned fails and changes nothing', async () => {
 });
 
 test('takeItem refuses to run outside a transaction', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   await assert.rejects(takeItem(db, user.id, 'soggy-biscuit', 1), /inside withTransaction/);
   assert.equal(await countOwned(db, user.id, 'soggy-biscuit'), 3);
 });
 
 test("one player cannot see or take another player's items", async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const other = await registerAccount(db, { username: 'nosy', password: 'correct horse' });
   await grantItem(db, user.id, 'pickled-moonbeam', 1);
   assert.equal(await countOwned(db, other.id, 'pickled-moonbeam'), 0);
@@ -92,7 +87,7 @@ test("one player cannot see or take another player's items", async () => {
 });
 
 test('the database itself refuses out-of-range or non-integer quantities', async () => {
-  const { db, user } = await playerDb();
+  const { db, user } = await databaseWithPlayer();
   const insert = (q) => db.query('INSERT INTO inventory (user_id, item_id, quantity) VALUES ($1, $2, $3)', [user.id, 'unlabelled-jar', q]);
   await assert.rejects(insert(MAX_STACK_SIZE + 1), /check/i);
   await assert.rejects(insert(0), /check/i);

@@ -31,9 +31,27 @@ export async function startTestServer(appOptions = {}) {
   // Fetches a page and pulls the CSRF token out of its form.
   async function csrfTokenFrom(path) {
     const page = await request(path);
-    const match = page.text.match(/name="_csrf" value="([^"]+)"/);
-    if (!match) throw new Error(`No CSRF token found on ${path}`);
-    return match[1];
+    const token = csrfTokenIn(page.text);
+    if (!token) throw new Error(`No CSRF token found on ${path}`);
+    return token;
+  }
+
+  // The buy form for an essential on a shop page: its CSRF token, request
+  // id and shown price. Null when the page has no such form.
+  async function buyForm(shopId, itemId) {
+    return shopForm(shopId, 'item', itemId);
+  }
+
+  // The same for a limited listing, by its stock id.
+  async function listingForm(shopId, listingId) {
+    return shopForm(shopId, 'listing', listingId);
+  }
+
+  async function shopForm(shopId, field, value) {
+    const page = await request(`/shops/${shopId}`);
+    const form = page.text.match(new RegExp(`name="request_id" value="([^"]+)">\\s*<input type="hidden" name="${field}" value="${value}">\\s*<input type="hidden" name="shown_price" value="(\\d+)"`));
+    if (!form) return null;
+    return { csrf: csrfTokenIn(page.text), requestId: form[1], shownPrice: form[2] };
   }
 
   // Registers a player and leaves the client logged in. Returns the user id.
@@ -56,5 +74,11 @@ export async function startTestServer(appOptions = {}) {
     return new Promise((resolve) => server.close(resolve));
   }
 
-  return { db, request, csrfTokenFrom, registerAndLogIn, logOut, close, cookieHeader: () => cookie };
+  return { db, request, csrfTokenFrom, buyForm, listingForm, registerAndLogIn, logOut, close, cookieHeader: () => cookie };
+}
+
+// Pulls the CSRF token out of a rendered page, or returns null.
+export function csrfTokenIn(html) {
+  const match = html.match(/name="_csrf" value="([^"]+)"/);
+  return match ? match[1] : null;
 }

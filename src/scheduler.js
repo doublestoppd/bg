@@ -9,8 +9,10 @@ import { pruneActivityLog } from './game/activity.js';
 // between processes happens in PostgreSQL (row locks), so any number of
 // processes may run this at once.
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const HOUSEKEEPING_INTERVAL_MS = 15 * 60 * 1000;
 
-export function startScheduler(pool, { restockIntervalMs = 30 * 1000, housekeepingIntervalMs = 15 * 60 * 1000 } = {}) {
+// restockIntervalMs comes from config (RESTOCK_CHECK_INTERVAL_MS).
+export function startScheduler(pool, { restockIntervalMs }) {
   const restockJob = {
     name: 'restock shops',
     run: async () => {
@@ -40,13 +42,9 @@ export function startScheduler(pool, { restockIntervalMs = 30 * 1000, housekeepi
     for (const job of housekeepingJobs) await runJob(job);
   }
 
-  const timers = [setInterval(runRestocks, restockIntervalMs), setInterval(runHousekeeping, housekeepingIntervalMs)];
+  const timers = [setInterval(runRestocks, restockIntervalMs), setInterval(runHousekeeping, HOUSEKEEPING_INTERVAL_MS)];
   for (const timer of timers) timer.unref();
-  return {
-    stop: () => timers.forEach((timer) => clearInterval(timer)),
-    runRestocks,
-    runHousekeeping,
-  };
+  return { stop: () => timers.forEach((timer) => clearInterval(timer)) };
 }
 
 async function runJob(job) {

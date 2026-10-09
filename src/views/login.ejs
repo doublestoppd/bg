@@ -1,9 +1,5 @@
 <%- include('partials/header') %>
 
-<% if (error) { %>
-<div class="notice notice-error"><p><%= error %></p></div>
-<% } %>
-
 <form method="post" action="/login">
   <%- include('partials/csrf') %>
   <div class="form-row">

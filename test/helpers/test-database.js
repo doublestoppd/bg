@@ -3,6 +3,7 @@ import config from '../../src/config.js';
 import { createPool } from '../../src/db/pool.js';
 import { runMigrations } from '../../src/db/migrate.js';
 import { syncItemCatalog } from '../../src/game/items.js';
+import { registerAccount } from '../../src/game/accounts.js';
 
 // The test suite runs against a real PostgreSQL database named by
 // TEST_DATABASE_URL. It is migrated once per test process and wiped
@@ -28,6 +29,13 @@ export function getTestPool() {
     });
   }
   return pool;
+}
+
+// A wiped database plus one registered player, the start of most tests.
+export async function databaseWithPlayer(username = 'wobble') {
+  const db = await resetDatabase();
+  const user = await registerAccount(db, { username, password: 'correct horse' });
+  return { db, user };
 }
 
 // Returns a pool pointing at an empty, freshly migrated database with the
