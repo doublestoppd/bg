@@ -10,6 +10,7 @@ import { withTransaction, PG_DEADLOCK, PG_SERIALIZATION_FAILURE, PG_UNIQUE_VIOLA
 import { lockUser } from '../db/users.js';
 import { insertPurchase, findPurchaseByKey, countPurchasesSince } from '../db/shop-purchases.js';
 import { lockListing, decrementListing } from '../db/shop-stock.js';
+import { findShopState } from '../db/shop-state.js';
 
 // ----- Tunable rules -----
 // A hard ceiling on one purchase, an integer-safety bound rather than a
@@ -133,6 +134,12 @@ async function listingOffer(db, shop, listingId, quantity, user) {
   const item = findItem(listing.item_id);
   if (!listing.active) {
     throw new GameRuleError(`That ${item.name} listing has gone; the shelves have been restocked since you looked.`, 'expired_listing');
+  }
+  // The shop page hides the shelves while a shop is paused; a saved form
+  // must not be able to buy from behind the shutters.
+  const state = await findShopState(db, shop.id);
+  if (state && state.paused) {
+    throw new GameRuleError(`${shop.name} is closed at the moment.`, 'paused');
   }
   if (listing.remaining_quantity === 0) {
     throw new GameRuleError(`${item.name} has sold out.`, 'sold_out');

@@ -85,8 +85,8 @@ router.post('/:id/buy', purchaseLimit, async (req, res, next) => {
     const result = await purchaseItem(db, userId, {
       shopId: shop.id,
       listingId: req.body.listing,
-      quantity: Number(req.body.quantity),
-      shownPrice: Number(req.body.shown_price),
+      quantity: wholeNumber(req.body.quantity),
+      shownPrice: wholeNumber(req.body.shown_price),
       requestId: req.body.request_id,
     });
     req.session.flash = { type: 'success', text: purchaseMessage(result) };
@@ -133,6 +133,12 @@ function timeAgo(date) {
   if (minutes < 60) return `${minutes} minutes ago`;
   if (minutes < 120) return 'about an hour ago';
   return `${Math.floor(minutes / 60)} hours ago`;
+}
+
+// A form field that must be a plain whole number. Number() would also
+// accept "0x3", "1e2" or " 3 "; those are never what a real form sends.
+function wholeNumber(value) {
+  return typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : NaN;
 }
 
 function purchaseMessage(result) {

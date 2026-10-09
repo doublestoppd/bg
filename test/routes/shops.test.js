@@ -217,3 +217,29 @@ test('the stock feed reports remaining quantities and the restock id, never the 
     await server.close();
   }
 });
+
+test('only plain digit strings are accepted as quantity and shown price', async () => {
+  const server = await startTestServer();
+  try {
+    const userId = await server.registerAndLogIn('wobble');
+    const biscuit = await stocked(server, 'soggy-biscuit', { quantity: 10, price: 5 });
+    for (const quantity of ['0x3', '1e1', ' 3 ', '3.0', '+3']) {
+      const { csrf, requestId, shownPrice } = await listingForm(server, biscuit.id);
+      const submit = await server.request('/shops/questionable-grocer/buy', {
+        method: 'POST',
+        form: { _csrf: csrf, request_id: requestId, listing: biscuit.id, shown_price: shownPrice, quantity },
+      });
+      assert.equal(submit.status, 400, `quantity ${JSON.stringify(quantity)}`);
+    }
+    const { csrf, requestId } = await listingForm(server, biscuit.id);
+    const odd = await server.request('/shops/questionable-grocer/buy', {
+      method: 'POST',
+      form: { _csrf: csrf, request_id: requestId, listing: biscuit.id, shown_price: '0x5', quantity: '1' },
+    });
+    assert.equal(odd.status, 400);
+    assert.equal(await getBalance(server.db, userId), 100);
+    assert.equal(await countOwned(server.db, userId, 'soggy-biscuit'), 3);
+  } finally {
+    await server.close();
+  }
+});

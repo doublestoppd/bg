@@ -13,6 +13,7 @@ import { countOwned, grantItem, MAX_STACK_SIZE } from '../../src/game/inventory.
 import { findCoinTransactionsByUser } from '../../src/db/coin-transactions.js';
 import { findPurchasesByUser } from '../../src/db/shop-purchases.js';
 import { findActiveListings, findListingsByRestock } from '../../src/db/shop-stock.js';
+import { setShopPaused } from '../../src/db/shop-state.js';
 import { GameRuleError } from '../../src/game/errors.js';
 
 const GROCER = 'questionable-grocer';
@@ -104,6 +105,18 @@ test('6. an expired listing (replaced by a restock) cannot be bought', async () 
   assert.equal(before.shelf.active, false);
   await assert.rejects(buy(db, user.id, old, 1), /shelves have been restocked/);
   assert.deepEqual(await snapshot(db, user.id, old), before);
+});
+
+test('a paused shop does not sell, even to a saved form', async () => {
+  const { db, user } = await setup();
+  const listing = await stockOne(db, 'fizzing-pebble', { quantity: 5, price: 10 });
+  await setShopPaused(db, GROCER, true);
+  await assert.rejects(buy(db, user.id, listing, 1), /closed at the moment/);
+  assert.equal((await remaining(db, listing)).remaining_quantity, 5);
+  assert.equal(await getBalance(db, user.id), 100);
+  await setShopPaused(db, GROCER, false);
+  await buy(db, user.id, listing, 1);
+  assert.equal((await remaining(db, listing)).remaining_quantity, 4);
 });
 
 test('7. a forged or stale shown price is refused and never charged', async () => {
