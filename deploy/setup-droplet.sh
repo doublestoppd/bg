@@ -38,6 +38,17 @@ TEST_DB_NAME=blobgarden_test
 
 say() { printf '\n==> %s\n' "$*"; }
 
+# Caddy's third-party apt repository (Cloudsmith) has refused downloads with
+# "402 Payment Required", and a source apt cannot read stops every later
+# apt-get update. Remove it wherever an earlier run or a manual attempt put it.
+remove_cloudsmith_caddy_source() {
+  grep -lis 'cloudsmith.io/public/caddy' /etc/apt/sources.list.d/* 2>/dev/null | xargs -r rm -f
+  rm -f /etc/apt/keyrings/caddy-stable-archive-keyring.gpg /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  if grep -qs 'cloudsmith.io/public/caddy' /etc/apt/sources.list; then
+    sed -i '/cloudsmith.io\/public\/caddy/d' /etc/apt/sources.list
+  fi
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run this script as root (for example: sudo bash setup-droplet.sh)." >&2
   exit 1
@@ -50,8 +61,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 
 say "Installing system packages"
-# See the Caddy step: a broken third-party source from an earlier run would stop apt here.
-rm -f /etc/apt/sources.list.d/caddy-stable.list
+remove_cloudsmith_caddy_source
 apt-get update -q
 apt-get install -y -q ca-certificates curl git gnupg ufw postgresql
 
@@ -70,7 +80,7 @@ say "Installing Caddy"
 # automatic HTTPS needs. Caddy's third-party apt repository (Cloudsmith)
 # has refused downloads before, so an earlier attempt to add it is removed
 # here or every later apt-get update would fail.
-rm -f /etc/apt/sources.list.d/caddy-stable.list /etc/apt/keyrings/caddy-stable-archive-keyring.gpg
+remove_cloudsmith_caddy_source
 if ! command -v caddy >/dev/null; then
   apt-get update -q
   apt-get install -y -q caddy
